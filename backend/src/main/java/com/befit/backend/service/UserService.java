@@ -29,6 +29,18 @@ public class UserService {
         user.setPhone(request.getPhone());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(Role.PATIENT);
+        
+        // --- Map New Patient Demographics & Contact Info ---
+        user.setDob(request.getDob());
+        user.setGender(request.getGender());
+        user.setAddress(request.getAddress());
+        user.setEmergencyContactName(request.getEmergencyContactName());
+        user.setEmergencyContactNumber(request.getEmergencyContactNumber());
+        
+        // --- Map New Pain Metrics ---
+        user.setPainType(request.getPainType());
+        user.setPainRating(request.getPainRating());
+        
         return userRepository.save(user);
     }
 
