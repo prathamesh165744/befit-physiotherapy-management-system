@@ -51,4 +51,27 @@ public class User {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    // --- NEW PATIENT REGISTRATION FIELDS ---
+    
+    @Column(name = "dob")
+    private String dob;
+
+    @Column(name = "gender")
+    private String gender;
+
+    @Column(name = "address", columnDefinition = "TEXT")
+    private String address;
+
+    @Column(name = "emergency_contact_name")
+    private String emergencyContactName;
+
+    @Column(name = "emergency_contact_number")
+    private String emergencyContactNumber;
+    
+    @Column(name = "pain_type")
+    private String painType;
+
+    @Column(name = "pain_rating")
+    private Integer painRating;
 }
