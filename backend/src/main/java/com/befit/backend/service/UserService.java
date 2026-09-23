@@ -44,7 +44,8 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public String loginPatient(LoginRequest request) {
+    // THIS IS THE UPDATED METHOD
+    public com.befit.backend.dto.AuthResponse loginUser(LoginRequest request) {
         // 1. Find user by email
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("User not found with this email"));
@@ -54,7 +55,9 @@ public class UserService {
             throw new RuntimeException("Invalid password");
         }
         
-        // 3. Generate and return JWT
-        return jwtUtil.generateToken(user.getEmail());
+        // 3. Generate and return JWT along with user details
+        String token = jwtUtil.generateToken(user.getEmail());
+        
+        return new com.befit.backend.dto.AuthResponse(token, user.getRole(), user.getFullName());
     }
 }
