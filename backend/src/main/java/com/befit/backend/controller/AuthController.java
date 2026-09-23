@@ -1,13 +1,12 @@
 package com.befit.backend.controller;
 
+import com.befit.backend.dto.AuthResponse;
 import com.befit.backend.dto.LoginRequest;
 import com.befit.backend.dto.RegisterRequest;
 import com.befit.backend.entity.User;
 import com.befit.backend.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Collections;
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -31,11 +30,13 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> loginPatient(@RequestBody LoginRequest request) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         try {
-            String token = userService.loginPatient(request);
-            // Return the token as a JSON object: {"token": "eyJhbGciOiJIUzI1..."}
-            return ResponseEntity.ok(Collections.singletonMap("token", token));
+            // Call the updated loginUser method which returns the AuthResponse object
+            AuthResponse authResponse = userService.loginUser(request);
+            
+            // Return the full object (token, role, fullName) as JSON
+            return ResponseEntity.ok(authResponse);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Login failed: " + e.getMessage());
         }

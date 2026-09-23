@@ -16,11 +16,27 @@ export default function Login() {
     setError('');
     try {
       const response = await axios.post('http://localhost:8080/api/auth/login', formData);
-      localStorage.setItem('token', response.data.token);
-      alert('Login Successful!');
-      navigate('/dashboard'); 
+      
+      // The backend now returns { token, role, fullName }
+      const { token, role, fullName } = response.data;
+
+      // Save the authentication data to local storage
+      localStorage.setItem('token', token);
+      localStorage.setItem('role', role);
+      localStorage.setItem('fullName', fullName);
+      
+      alert(`Welcome, ${fullName}!`);
+      
+      // Route the user conditionally based on their role
+      if (role === 'PATIENT') {
+        navigate('/dashboard'); 
+      } else {
+        navigate('/staff-dashboard'); // ADMIN, DOCTOR, and RECEPTIONIST go here
+      }
     } catch (err) {
-      setError(err.response?.data || 'Invalid email or password');
+      // Safely handle different types of error formats
+      const errorMessage = err.response?.data?.message || err.response?.data || 'Invalid email or password';
+      setError(typeof errorMessage === 'string' ? errorMessage : 'Invalid email or password');
     }
   };
 
@@ -51,7 +67,7 @@ export default function Login() {
       <div className="w-full md:w-1/2 flex flex-col justify-center px-8 md:px-24 bg-white">
         <div className="max-w-md w-full mx-auto">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back!</h2>
-          <p className="text-gray-500 mb-8">Log in to your patient account to continue</p>
+          <p className="text-gray-500 mb-8">Log in to your account to continue</p>
 
           {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md text-sm">{error}</div>}
 
