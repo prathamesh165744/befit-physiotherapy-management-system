@@ -8,7 +8,8 @@ export default function Register() {
     fullName: '', email: '', phone: '', password: '', confirmPassword: '',
     dob: '', gender: '', address: '',
     emergencyContactName: '', emergencyContactNumber: '', termsAccepted: false,
-    painType: '', painRating: ''
+    painType: '', painRating: '',
+    branchId: 'KARVE-ROAD' // Added default branch
   });
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -100,24 +101,34 @@ export default function Register() {
             {/* STEP 1: Personal Details */}
             {step === 1 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                {/* NEW BRANCH SELECTOR */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Clinic Branch *</label>
+                  <select name="branchId" value={formData.branchId} onChange={handleChange} required className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                    <option value="KARVE-ROAD">Karve Road, Pune</option>
+                    <option value="BANER">Baner, Pune</option>
+                    <option value="VIMAN-NAGAR">Viman Nagar, Pune</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
                   <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} required className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                   <input type="email" name="email" value={formData.email} onChange={handleChange} required className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number *</label>
                   <input type="text" name="phone" value={formData.phone} onChange={handleChange} required className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
                   <input type="password" name="password" value={formData.password} onChange={handleChange} required className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password *</label>
                   <input type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} required className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
               </div>

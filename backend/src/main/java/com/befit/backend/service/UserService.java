@@ -2,27 +2,28 @@ package com.befit.backend.service;
 
 import com.befit.backend.dto.LoginRequest;
 import com.befit.backend.dto.RegisterRequest;
+import com.befit.backend.entity.Patient;
 import com.befit.backend.entity.Role;
 import com.befit.backend.entity.User;
+import com.befit.backend.repository.PatientRepository;
 import com.befit.backend.repository.UserRepository;
 import com.befit.backend.util.JwtUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
 
 @Service
 public class UserService {
 
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtUtil jwtUtil;
-
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtUtil = jwtUtil;
-    }
+    @Autowired private UserRepository userRepository;
+    @Autowired private PatientRepository patientRepository; 
+    @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private JwtUtil jwtUtil;
 
     public User registerPatient(RegisterRequest request) {
+        // 1. Create the User Login Account
         User user = new User();
         user.setFullName(request.getFullName());
         user.setEmail(request.getEmail());
@@ -30,34 +31,50 @@ public class UserService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(Role.PATIENT);
         
-        // --- Map New Patient Demographics & Contact Info ---
-        user.setDob(request.getDob());
+        // Convert LocalDate to String for the User entity
+        user.setDob(request.getDob() != null ? request.getDob().toString() : null);
+        
         user.setGender(request.getGender());
         user.setAddress(request.getAddress());
         user.setEmergencyContactName(request.getEmergencyContactName());
         user.setEmergencyContactNumber(request.getEmergencyContactNumber());
-        
-        // --- Map New Pain Metrics ---
         user.setPainType(request.getPainType());
         user.setPainRating(request.getPainRating());
         
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+
+        // 2. Create the linked Patient Record so it appears on the Receptionist Dashboard
+        Patient patient = new Patient();
+        patient.setUser(savedUser);
+        patient.setFullName(request.getFullName());
+        patient.setPhone(request.getPhone());
+        patient.setGender(request.getGender());
+        patient.setDateOfBirth(request.getDob()); // Patient entity uses LocalDate, no conversion needed here
+        patient.setEmergencyContact(request.getEmergencyContactNumber());
+        
+        // Link to branch (default to KARVE-ROAD if they didn't select one)
+        patient.setBranchId(request.getBranchId() != null && !request.getBranchId().isEmpty() ? request.getBranchId() : "KARVE-ROAD");
+        patient.setRegistrationDate(LocalDate.now());
+        
+        // Save initial pain metrics into the medical history notes for the doctor
+        if (request.getPainType() != null) {
+            patient.setMedicalHistory("Self-Reported Initial Pain: " + request.getPainType() + " (Rating: " + request.getPainRating() + "/10)");
+        }
+
+        patientRepository.save(patient);
+
+        return savedUser;
     }
 
-    // THIS IS THE UPDATED METHOD
     public com.befit.backend.dto.AuthResponse loginUser(LoginRequest request) {
-        // 1. Find user by email
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("User not found with this email"));
         
-        // 2. Verify password
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new RuntimeException("Invalid password");
         }
         
-        // 3. Generate and return JWT along with user details
         String token = jwtUtil.generateToken(user.getEmail());
-        
         return new com.befit.backend.dto.AuthResponse(token, user.getRole(), user.getFullName());
     }
 }
