@@ -22,6 +22,14 @@ public class PatientController {
         return ResponseEntity.ok(patientRepository.findByBranchId(branchId));
     }
 
+    // NEW: Fetch a single patient by ID for their Profile Page
+    @GetMapping("/{id}")
+    public ResponseEntity<Patient> getPatientById(@PathVariable Long id) {
+        return patientRepository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     @PostMapping
     public ResponseEntity<Patient> registerPatient(@RequestBody Patient patient) {
         if (patient.getBranchId() == null) {

@@ -8,7 +8,6 @@ export default function StaffLayout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Fetch user data from localStorage
   const role = localStorage.getItem('role') || 'RECEPTIONIST';
   const fullName = localStorage.getItem('fullName') || 'Sarah Jenkins';
   const email = localStorage.getItem('email') || 'reception@befit.com';
@@ -18,7 +17,6 @@ export default function StaffLayout({ children }) {
     navigate('/');
   };
 
-  // Middle Menu Links (Exact icons from your design)
   const menuItems = [
     { name: 'Dashboard', path: '/staff-dashboard', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg> },
     { name: 'Patients', path: '/staff-dashboard/patients', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> },
@@ -33,7 +31,6 @@ export default function StaffLayout({ children }) {
       {/* --- Sidebar --- */}
       <aside className="w-[260px] bg-white border-r border-slate-200 flex flex-col justify-between relative z-50">
         <div>
-          {/* Logo Section */}
           <div className="h-16 flex items-center px-6 border-b border-slate-100">
             <div className="text-blue-600 font-bold text-xl flex items-center space-x-2">
                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-7 h-7">
@@ -46,7 +43,6 @@ export default function StaffLayout({ children }) {
             </div>
           </div>
           
-          {/* Middle Navigation (Pixel Perfect to reference image) */}
           <nav className="p-4 space-y-2 mt-2">
             {menuItems.map((item) => {
               const isActive = location.pathname === item.path || (location.pathname === '/staff-dashboard/' && item.path === '/staff-dashboard');
@@ -70,10 +66,8 @@ export default function StaffLayout({ children }) {
           </nav>
         </div>
         
-        {/* Interactive Bottom Profile */}
         <div className="relative p-4 border-t border-slate-100">
           
-          {/* Popup Menu */}
           {isProfileMenuOpen && (
             <div className="absolute bottom-full mb-2 left-4 w-[220px] bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50">
               <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
@@ -95,7 +89,6 @@ export default function StaffLayout({ children }) {
             </div>
           )}
 
-          {/* Profile Trigger Button */}
           <button 
             onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
             className="w-full flex items-center space-x-3 hover:bg-slate-50 p-2 rounded-xl transition text-left focus:outline-none"
@@ -109,10 +102,8 @@ export default function StaffLayout({ children }) {
         </div>
       </aside>
 
-      {/* --- Main Content Area --- */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         
-        {/* Top Navbar */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-40">
           <div className="flex items-center space-x-8">
             <div className="font-semibold text-slate-800 flex items-center space-x-2">
@@ -121,10 +112,10 @@ export default function StaffLayout({ children }) {
               </div>
               <span className="text-sm font-bold">BeFit Physiotherapy</span>
             </div>
-            <div className="hidden md:flex space-x-6 text-xs text-slate-500 font-medium">
-              <span className="hover:text-slate-800 cursor-pointer flex items-center gap-1.5"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Appointments</span>
+            {/* <div className="hidden md:flex space-x-6 text-xs text-slate-500 font-medium">
+              <Link to="/staff-dashboard/appointments" className="hover:text-slate-800 cursor-pointer flex items-center gap-1.5"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Appointments</Link>
               <span className="hover:text-slate-800 cursor-pointer flex items-center gap-1.5"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> Treatment Plans</span>
-            </div>
+            </div> */}
           </div>
           
           <div className="flex items-center space-x-6">
@@ -133,7 +124,6 @@ export default function StaffLayout({ children }) {
               <input type="text" placeholder="Search records..." className="pl-9 pr-4 py-1.5 bg-slate-50 border border-transparent rounded-full text-xs focus:bg-white focus:border-slate-300 outline-none w-64 transition-all" />
             </div>
             
-            {/* Notification Bell */}
             <button className="relative text-slate-400 hover:text-blue-600 transition p-1" onClick={() => alert("No new notifications")}>
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
               <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
@@ -141,12 +131,10 @@ export default function StaffLayout({ children }) {
           </div>
         </header>
 
-        {/* Dashboard Content */}
         <main className="flex-1 overflow-x-hidden overflow-y-auto p-8 relative z-0">
           {children}
         </main>
 
-        {/* --- Profile Info Modal --- */}
         {showProfileModal && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all">

@@ -1,8 +1,9 @@
 package com.befit.backend.repository;
+
 import com.befit.backend.entity.Appointment;
-import com.befit.backend.entity.AppointmentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -10,5 +11,7 @@ import java.util.List;
 public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
     List<Appointment> findByBranchId(String branchId);
     List<Appointment> findByBranchIdAndAppointmentDateBetweenOrderByAppointmentDateAsc(String branchId, LocalDateTime start, LocalDateTime end);
-    List<Appointment> findTop5ByBranchIdAndStatusInOrderByCheckInTimeDesc(String branchId, List<AppointmentStatus> statuses);
+    
+    // NEW: Fetch all past appointments for a specific patient's timeline
+    List<Appointment> findByPatientIdOrderByAppointmentDateDesc(Long patientId);
 }

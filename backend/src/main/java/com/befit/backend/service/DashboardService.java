@@ -1,10 +1,12 @@
 package com.befit.backend.service;
+
 import com.befit.backend.dto.DashboardDTO;
 import com.befit.backend.entity.Appointment;
-import com.befit.backend.entity.AppointmentStatus;
+import com.befit.backend.entity.Patient;
 import com.befit.backend.repository.AppointmentRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -17,39 +19,52 @@ import java.util.Map;
 
 @Service
 public class DashboardService {
-    @Autowired
-    private AppointmentRepository appointmentRepository;
+    @Autowired private AppointmentRepository appointmentRepository;
 
-    public DashboardDTO getReceptionistDashboardData(String branchId) {
+    public DashboardDTO getReceptionistDashboardData(String branchId, String dateStr) {
         DashboardDTO dto = new DashboardDTO();
         String targetBranch = (branchId != null && !branchId.isEmpty()) ? branchId : "KARVE-ROAD";
         
-        LocalDateTime startOfDay = LocalDateTime.of(LocalDate.now(), LocalTime.MIN);
-        LocalDateTime endOfDay = LocalDateTime.of(LocalDate.now(), LocalTime.MAX);
+        LocalDate targetDate = LocalDate.now();
+        try {
+            if (dateStr != null && !dateStr.isEmpty() && !dateStr.equals("undefined")) {
+                targetDate = LocalDate.parse(dateStr);
+            }
+        } catch (Exception e) {
+            System.out.println("Invalid date received, defaulting to today.");
+        }
         
-        List<Appointment> todayAppointments = appointmentRepository.findByBranchIdAndAppointmentDateBetweenOrderByAppointmentDateAsc(targetBranch, startOfDay, endOfDay);
-        List<Appointment> recentCheckins = appointmentRepository.findTop5ByBranchIdAndStatusInOrderByCheckInTimeDesc(targetBranch, List.of(AppointmentStatus.CHECKED_IN, AppointmentStatus.COMPLETED));
+        LocalDateTime startOfDay = LocalDateTime.of(targetDate, LocalTime.MIN);
+        LocalDateTime endOfDay = LocalDateTime.of(targetDate, LocalTime.MAX);
+        
+        List<Appointment> dayAppointments = appointmentRepository.findByBranchIdAndAppointmentDateBetweenOrderByAppointmentDateAsc(targetBranch, startOfDay, endOfDay);
 
         int checkedInCount = 0; int waitingCount = 0; long totalWaitMinutes = 0;
         List<Map<String, Object>> upcomingList = new ArrayList<>();
         List<Map<String, Object>> registrationList = new ArrayList<>();
         DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("hh:mm a");
 
-        for (Appointment apt : todayAppointments) {
-            if (apt.getPatient() == null) continue;
+        for (Appointment apt : dayAppointments) {
             String status = apt.getStatus() != null ? apt.getStatus().name() : "WAITING";
             
             if (status.equals("CHECKED_IN")) checkedInCount++;
             if (status.equals("WAITING")) {
                 waitingCount++;
-                if (apt.getCheckInTime() != null) {
+                if (apt.getCheckInTime() != null && targetDate.equals(LocalDate.now())) {
                     totalWaitMinutes += Math.max(0, Duration.between(apt.getCheckInTime(), LocalDateTime.now()).toMinutes());
                 }
             }
 
+            Patient p = apt.getPatient();
+            String pName = p != null && p.getFullName() != null ? p.getFullName() : "Walk-in Patient";
+            String pAgeGender = p != null && p.getGender() != null ? "N/A / " + p.getGender() : "N/A / M";
+            String pId = p != null ? "REG-" + p.getId() : "REG-000";
+            String pIni = pName.length() >= 2 ? pName.substring(0, 2).toUpperCase() : "PT";
+
             Map<String, Object> upcomingMap = new HashMap<>();
+            upcomingMap.put("id", apt.getId());
             upcomingMap.put("time", apt.getAppointmentDate() != null ? apt.getAppointmentDate().format(timeFormatter) : "10:00 AM");
-            upcomingMap.put("name", apt.getPatient().getFullName());
+            upcomingMap.put("name", pName);
             upcomingMap.put("doc", apt.getDoctorName() != null ? apt.getDoctorName() : "Doctor");
             upcomingMap.put("type", apt.getCaseType() != null ? apt.getCaseType() : "Consultation");
             upcomingMap.put("status", status.replace("_", " "));
@@ -57,18 +72,20 @@ public class DashboardService {
             upcomingList.add(upcomingMap);
 
             Map<String, Object> regMap = new HashMap<>();
-            regMap.put("id", "REG-" + apt.getPatient().getId());
-            regMap.put("ini", apt.getPatient().getFullName().length() >= 2 ? apt.getPatient().getFullName().substring(0, 2).toUpperCase() : "PT");
-            regMap.put("name", apt.getPatient().getFullName());
-            regMap.put("age", apt.getPatient().getGender() != null ? "N/A / " + apt.getPatient().getGender() : "N/A / M");
+            regMap.put("id", apt.getId()); 
+            regMap.put("regId", pId);
+            regMap.put("ini", pIni);
+            regMap.put("name", pName);
+            regMap.put("age", pAgeGender);
             regMap.put("doc", apt.getDoctorName() != null ? apt.getDoctorName() : "Doctor");
             regMap.put("case", apt.getCaseType() != null ? apt.getCaseType() : "Consultation");
-            regMap.put("status", status.replace("_", " "));
+            regMap.put("status", status); 
+            regMap.put("statusLabel", status.replace("_", " ")); 
             regMap.put("color", status.equals("WAITING") ? "text-yellow-600" : status.equals("CHECKED_IN") ? "text-green-600" : "text-[#2563eb]");
             registrationList.add(regMap);
         }
 
-        dto.setTodayTotal(todayAppointments.size());
+        dto.setTodayTotal(dayAppointments.size());
         dto.setCheckedIn(checkedInCount);
         dto.setWaiting(waitingCount);
         dto.setNewInquiries(waitingCount > 0 ? (int)(totalWaitMinutes / waitingCount) : 0);

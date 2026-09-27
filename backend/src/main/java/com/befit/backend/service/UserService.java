@@ -11,7 +11,6 @@ import com.befit.backend.util.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
 import java.time.LocalDate;
 
 @Service
@@ -23,17 +22,13 @@ public class UserService {
     @Autowired private JwtUtil jwtUtil;
 
     public User registerPatient(RegisterRequest request) {
-        // 1. Create the User Login Account
         User user = new User();
         user.setFullName(request.getFullName());
         user.setEmail(request.getEmail());
         user.setPhone(request.getPhone());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(Role.PATIENT);
-        
-        // Convert LocalDate to String for the User entity
         user.setDob(request.getDob() != null ? request.getDob().toString() : null);
-        
         user.setGender(request.getGender());
         user.setAddress(request.getAddress());
         user.setEmergencyContactName(request.getEmergencyContactName());
@@ -41,28 +36,26 @@ public class UserService {
         user.setPainType(request.getPainType());
         user.setPainRating(request.getPainRating());
         
+        // Link the user login account to their branch!
+        String assignedBranch = request.getBranchId() != null && !request.getBranchId().isEmpty() ? request.getBranchId() : "KARVE-ROAD";
+        user.setBranchId(assignedBranch);
+        
         User savedUser = userRepository.save(user);
 
-        // 2. Create the linked Patient Record so it appears on the Receptionist Dashboard
         Patient patient = new Patient();
         patient.setUser(savedUser);
         patient.setFullName(request.getFullName());
         patient.setPhone(request.getPhone());
         patient.setGender(request.getGender());
-        patient.setDateOfBirth(request.getDob()); // Patient entity uses LocalDate, no conversion needed here
+        patient.setDateOfBirth(request.getDob());
         patient.setEmergencyContact(request.getEmergencyContactNumber());
-        
-        // Link to branch (default to KARVE-ROAD if they didn't select one)
-        patient.setBranchId(request.getBranchId() != null && !request.getBranchId().isEmpty() ? request.getBranchId() : "KARVE-ROAD");
+        patient.setBranchId(assignedBranch);
         patient.setRegistrationDate(LocalDate.now());
         
-        // Save initial pain metrics into the medical history notes for the doctor
         if (request.getPainType() != null) {
             patient.setMedicalHistory("Self-Reported Initial Pain: " + request.getPainType() + " (Rating: " + request.getPainRating() + "/10)");
         }
-
         patientRepository.save(patient);
-
         return savedUser;
     }
 
@@ -75,6 +68,7 @@ public class UserService {
         }
         
         String token = jwtUtil.generateToken(user.getEmail());
-        return new com.befit.backend.dto.AuthResponse(token, user.getRole(), user.getFullName());
+        // Pass the branchId to the frontend!
+        return new com.befit.backend.dto.AuthResponse(token, user.getRole(), user.getFullName(), user.getBranchId());
     }
 }
