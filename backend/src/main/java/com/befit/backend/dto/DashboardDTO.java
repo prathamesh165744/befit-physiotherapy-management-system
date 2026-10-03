@@ -12,17 +12,19 @@ public class DashboardDTO {
     private List<Map<String, Object>> upcomingAppointments;
     private List<Map<String, Object>> currentRegistrations;
 
-    // Getters and Setters
+    // Getters
     public int getTodayTotal() { return todayTotal; }
-    public void setTodayTotal(int todayTotal) { this.todayTotal = todayTotal; }
     public int getCheckedIn() { return checkedIn; }
-    public void setCheckedIn(int checkedIn) { this.checkedIn = checkedIn; }
     public int getWaiting() { return waiting; }
-    public void setWaiting(int waiting) { this.waiting = waiting; }
     public int getNewInquiries() { return newInquiries; }
-    public void setNewInquiries(int newInquiries) { this.newInquiries = newInquiries; }
     public List<Map<String, Object>> getUpcomingAppointments() { return upcomingAppointments; }
-    public void setUpcomingAppointments(List<Map<String, Object>> upcomingAppointments) { this.upcomingAppointments = upcomingAppointments; }
     public List<Map<String, Object>> getCurrentRegistrations() { return currentRegistrations; }
+
+    // Setters
+    public void setTodayTotal(int todayTotal) { this.todayTotal = todayTotal; }
+    public void setCheckedIn(int checkedIn) { this.checkedIn = checkedIn; }
+    public void setWaiting(int waiting) { this.waiting = waiting; }
+    public void setNewInquiries(int newInquiries) { this.newInquiries = newInquiries; }
+    public void setUpcomingAppointments(List<Map<String, Object>> upcomingAppointments) { this.upcomingAppointments = upcomingAppointments; }
     public void setCurrentRegistrations(List<Map<String, Object>> currentRegistrations) { this.currentRegistrations = currentRegistrations; }
 }

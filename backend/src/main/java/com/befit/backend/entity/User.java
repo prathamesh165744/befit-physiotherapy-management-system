@@ -20,27 +20,18 @@ public class User {
     private Integer painRating;
     private String branchId; 
     
+    // FIX: Tell Java to explicitly map this to PostgreSQL's "is_active" column!
     @Column(name = "is_active", columnDefinition = "boolean default true")
     private boolean active = true;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
-    // FIX: The missing updated_at field that PostgreSQL is demanding
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
-
-    // Automatically set BOTH timestamps right before saving to the database
     @PrePersist
     protected void onCreate() {
-        if (createdAt == null) createdAt = LocalDateTime.now();
-        if (updatedAt == null) updatedAt = LocalDateTime.now();
-    }
-
-    // Automatically update the timestamp whenever the user record is modified
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
     }
 
     public Long getId() { return id; } public void setId(Long id) { this.id = id; }
@@ -59,5 +50,4 @@ public class User {
     public String getBranchId() { return branchId; } public void setBranchId(String branchId) { this.branchId = branchId; }
     public boolean isActive() { return active; } public void setActive(boolean active) { this.active = active; }
     public LocalDateTime getCreatedAt() { return createdAt; } public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-    public LocalDateTime getUpdatedAt() { return updatedAt; } public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

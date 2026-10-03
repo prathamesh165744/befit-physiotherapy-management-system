@@ -3,8 +3,6 @@ import axios from 'axios';
 import StaffLayout from '../layouts/StaffLayout';
 import RegisterPatientModal from '../components/modals/RegisterPatientModal';
 import NewAppointmentModal from '../components/modals/NewAppointmentModal';
-import GenerateBillModal from '../components/modals/GenerateBillModal';
-import { Link } from 'react-router-dom';
 
 const StaffDashboard = () => {
   // NEW: State for Date Filtering (Defaults to today)
@@ -17,8 +15,6 @@ const StaffDashboard = () => {
   
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
-  const [isBillModalOpen, setIsBillModalOpen] = useState(false);
-  const [selectedAptForBill, setSelectedAptForBill] = useState(null);
 
   // Updated to pass the selected date to the backend
   const fetchDashboardData = () => {
@@ -150,11 +146,10 @@ const StaffDashboard = () => {
             {/* Kept placeholder styling for layout consistency */}
             <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
               <div className="flex justify-between items-center mb-5">
-                <h3 className="text-[17px] font-bold text-slate-800">Billing System</h3>
-                <Link to="/staff-dashboard/billing" className="text-xs font-bold text-blue-600 uppercase tracking-wider hover:underline">View All</Link>
+                <h3 className="text-[17px] font-bold text-slate-800">Clinic Updates</h3>
               </div>
               <div className="p-4 bg-blue-50 text-blue-700 text-sm rounded-lg font-medium">
-                Quick access to financial records and manual invoicing.
+                Equipment maintenance scheduled for Friday evening.
               </div>
             </div>
           </div>
@@ -243,7 +238,7 @@ const StaffDashboard = () => {
                           </button>
                         )}
                         {row.status === 'CHECKED_IN' && (
-                          <button onClick={() => { setSelectedAptForBill(row); setIsBillModalOpen(true); }} className="bg-yellow-100 hover:bg-yellow-500 text-yellow-700 hover:text-white px-3 py-1.5 rounded text-[11px] font-bold transition-colors">
+                          <button onClick={() => handleStatusUpdate(row.id, 'COMPLETED')} className="bg-yellow-100 hover:bg-yellow-500 text-yellow-700 hover:text-white px-3 py-1.5 rounded text-[11px] font-bold transition-colors">
                             Generate Bill
                           </button>
                         )}
@@ -262,7 +257,6 @@ const StaffDashboard = () => {
       </div>
 
       <RegisterPatientModal isOpen={isRegisterModalOpen} onClose={() => setIsRegisterModalOpen(false)} onSuccess={() => { setIsRegisterModalOpen(false); fetchDashboardData(); }} />
-      <GenerateBillModal isOpen={isBillModalOpen} onClose={() => setIsBillModalOpen(false)} appointment={selectedAptForBill} onSuccess={() => { setIsBillModalOpen(false); fetchDashboardData(); }} />
       <NewAppointmentModal isOpen={isAppointmentModalOpen} onClose={() => setIsAppointmentModalOpen(false)} onSuccess={() => { setIsAppointmentModalOpen(false); fetchDashboardData(); }} />
     </StaffLayout>
   );

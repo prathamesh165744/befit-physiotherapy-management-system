@@ -10,8 +10,7 @@ export default function Login() {
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
-
- const handleLogin = async (e) => {
+const handleLogin = async (e) => {
     e.preventDefault();
     try {
       const res = await axios.post('http://localhost:8080/api/auth/login', formData);
