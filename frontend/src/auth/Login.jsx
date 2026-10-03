@@ -11,35 +11,29 @@ export default function Login() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleLogin = async (e) => {
+ const handleLogin = async (e) => {
     e.preventDefault();
-    setError('');
     try {
-      const response = await axios.post('http://localhost:8080/api/auth/login', formData);
+      const res = await axios.post('http://localhost:8080/api/auth/login', formData);
       
-      // The backend now returns { token, role, fullName }
-      const { token, role, fullName } = response.data;
+      // Save all auth and routing details
+      localStorage.setItem('token', res.data.token);
+      localStorage.setItem('role', res.data.role);
+      localStorage.setItem('fullName', res.data.fullName);
+      localStorage.setItem('email', formData.email);
+      
+      // NEW: Save the dynamic branch!
+      localStorage.setItem('branchId', res.data.branchId || 'KARVE-ROAD'); 
 
-      // Save the authentication data to local storage
-      localStorage.setItem('token', token);
-      localStorage.setItem('role', role);
-      localStorage.setItem('fullName', fullName);
-      
-      alert(`Welcome, ${fullName}!`);
-      
-      // Route the user conditionally based on their role
-      if (role === 'PATIENT') {
-        navigate('/dashboard'); 
+      if (res.data.role === 'PATIENT') {
+        navigate('/dashboard');
       } else {
-        navigate('/staff-dashboard'); // ADMIN, DOCTOR, and RECEPTIONIST go here
+        navigate('/staff-dashboard');
       }
     } catch (err) {
-      // Safely handle different types of error formats
-      const errorMessage = err.response?.data?.message || err.response?.data || 'Invalid email or password';
-      setError(typeof errorMessage === 'string' ? errorMessage : 'Invalid email or password');
+      setError(err.response?.data?.message || 'Invalid credentials');
     }
   };
-
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Left Pane - Clinic Image & Marketing */}

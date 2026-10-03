@@ -1,77 +1,63 @@
 package com.befit.backend.entity;
-
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "users")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
 public class User {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(name = "full_name", nullable = false)
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
     private String fullName;
-
-    @Column(nullable = false, unique = true)
     private String email;
-
-    @Column(nullable = false)
     private String phone;
-
-    @Column(nullable = false)
     private String password;
+    @Enumerated(EnumType.STRING) private Role role;
+    private String dob;
+    private String gender;
+    private String address;
+    private String emergencyContactName;
+    private String emergencyContactNumber;
+    private String painType;
+    private Integer painRating;
+    private String branchId; 
+    
+    @Column(name = "is_active", columnDefinition = "boolean default true")
+    private boolean active = true;
 
-    // This column controls which portal the user can access
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Role role;
-
-    // Relevant for Staff Portal (which branch they work at)
-    @Column(name = "branch_id")
-    private Long branchId;
-
-    @Column(name = "is_active", nullable = false)
-    private boolean isActive = true;
-
-    @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
-    @UpdateTimestamp
+    // FIX: The missing updated_at field that PostgreSQL is demanding
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    // --- NEW PATIENT REGISTRATION FIELDS ---
-    
-    @Column(name = "dob")
-    private String dob;
+    // Automatically set BOTH timestamps right before saving to the database
+    @PrePersist
+    protected void onCreate() {
+        if (createdAt == null) createdAt = LocalDateTime.now();
+        if (updatedAt == null) updatedAt = LocalDateTime.now();
+    }
 
-    @Column(name = "gender")
-    private String gender;
+    // Automatically update the timestamp whenever the user record is modified
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 
-    @Column(name = "address", columnDefinition = "TEXT")
-    private String address;
-
-    @Column(name = "emergency_contact_name")
-    private String emergencyContactName;
-
-    @Column(name = "emergency_contact_number")
-    private String emergencyContactNumber;
-    
-    @Column(name = "pain_type")
-    private String painType;
-
-    @Column(name = "pain_rating")
-    private Integer painRating;
+    public Long getId() { return id; } public void setId(Long id) { this.id = id; }
+    public String getFullName() { return fullName; } public void setFullName(String fullName) { this.fullName = fullName; }
+    public String getEmail() { return email; } public void setEmail(String email) { this.email = email; }
+    public String getPhone() { return phone; } public void setPhone(String phone) { this.phone = phone; }
+    public String getPassword() { return password; } public void setPassword(String password) { this.password = password; }
+    public Role getRole() { return role; } public void setRole(Role role) { this.role = role; }
+    public String getDob() { return dob; } public void setDob(String dob) { this.dob = dob; }
+    public String getGender() { return gender; } public void setGender(String gender) { this.gender = gender; }
+    public String getAddress() { return address; } public void setAddress(String address) { this.address = address; }
+    public String getEmergencyContactName() { return emergencyContactName; } public void setEmergencyContactName(String emergencyContactName) { this.emergencyContactName = emergencyContactName; }
+    public String getEmergencyContactNumber() { return emergencyContactNumber; } public void setEmergencyContactNumber(String emergencyContactNumber) { this.emergencyContactNumber = emergencyContactNumber; }
+    public String getPainType() { return painType; } public void setPainType(String painType) { this.painType = painType; }
+    public Integer getPainRating() { return painRating; } public void setPainRating(Integer painRating) { this.painRating = painRating; }
+    public String getBranchId() { return branchId; } public void setBranchId(String branchId) { this.branchId = branchId; }
+    public boolean isActive() { return active; } public void setActive(boolean active) { this.active = active; }
+    public LocalDateTime getCreatedAt() { return createdAt; } public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; } public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }
