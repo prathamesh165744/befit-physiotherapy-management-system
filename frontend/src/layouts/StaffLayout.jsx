@@ -29,7 +29,7 @@ export default function StaffLayout({ children }) {
     <div className="flex h-screen bg-[#f8f9fc] font-sans text-slate-800">
       
       {/* --- Sidebar --- */}
-      <aside className="w-[260px] bg-white border-r border-slate-200 flex flex-col justify-between relative z-50">
+      <aside className="w-[260px] bg-white border-r border-slate-200 flex flex-col justify-between relative z-50 print:hidden">
         <div>
           <div className="h-16 flex items-center px-6 border-b border-slate-100">
             <div className="text-blue-600 font-bold text-xl flex items-center space-x-2">
@@ -104,7 +104,7 @@ export default function StaffLayout({ children }) {
 
       <div className="flex-1 flex flex-col overflow-hidden relative">
         
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-40">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-40 print:hidden">
           <div className="flex items-center space-x-8">
             <div className="font-semibold text-slate-800 flex items-center space-x-2">
               <div className="w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs">
@@ -131,7 +131,7 @@ export default function StaffLayout({ children }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-x-hidden overflow-y-auto p-8 relative z-0">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto p-8 relative z-0 print:p-0 print:overflow-visible">
           {children}
         </main>
 

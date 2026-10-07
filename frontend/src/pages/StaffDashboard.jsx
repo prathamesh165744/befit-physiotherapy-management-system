@@ -3,9 +3,10 @@ import axios from 'axios';
 import StaffLayout from '../layouts/StaffLayout';
 import RegisterPatientModal from '../components/modals/RegisterPatientModal';
 import NewAppointmentModal from '../components/modals/NewAppointmentModal';
+// FIX: Import the GenerateBillModal we fixed earlier
+import GenerateBillModal from '../components/modals/GenerateBillModal';
 
 const StaffDashboard = () => {
-  // NEW: State for Date Filtering (Defaults to today)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [dashboardData, setDashboardData] = useState({
@@ -15,8 +16,10 @@ const StaffDashboard = () => {
   
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
+  
+  // FIX: New state to track which appointment we are currently billing
+  const [billingAppointment, setBillingAppointment] = useState(null);
 
-  // Updated to pass the selected date to the backend
   const fetchDashboardData = () => {
     setIsLoading(true);
     axios.get(`http://localhost:8080/api/dashboard/staff-data?date=${selectedDate}`)
@@ -38,16 +41,14 @@ const StaffDashboard = () => {
       });
   };
 
-  // Re-fetch data whenever the user changes the date
   useEffect(() => {
     fetchDashboardData();
   }, [selectedDate]);
 
-  // NEW: Handle Status Actions (Check-in, Generate Bill)
   const handleStatusUpdate = (appointmentId, newStatus) => {
     axios.put(`http://localhost:8080/api/appointments/${appointmentId}/status`, { status: newStatus })
       .then(() => {
-        fetchDashboardData(); // Instantly refresh dashboard
+        fetchDashboardData(); 
       })
       .catch(err => {
         alert("Failed to update status. " + err.message);
@@ -70,7 +71,6 @@ const StaffDashboard = () => {
             </p>
           </div>
           <div className="flex items-center gap-4">
-            {/* NEW: Date Picker for Time Travel */}
             <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 flex items-center gap-2 shadow-sm">
               <span className="text-xs font-bold text-slate-400 uppercase">View Date:</span>
               <input 
@@ -143,7 +143,6 @@ const StaffDashboard = () => {
               </div>
             </div>
             
-            {/* Kept placeholder styling for layout consistency */}
             <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
               <div className="flex justify-between items-center mb-5">
                 <h3 className="text-[17px] font-bold text-slate-800">Clinic Updates</h3>
@@ -230,15 +229,15 @@ const StaffDashboard = () => {
                       <td className="px-6 py-4 font-medium">{row.case}</td>
                       <td className="px-6 py-4"><span className={`text-[10px] font-bold uppercase tracking-wider ${row.color}`}>{row.statusLabel}</span></td>
                       
-                      {/* DYNAMIC ACTION BUTTONS */}
                       <td className="px-6 py-4 text-right">
                         {row.status === 'WAITING' && (
                           <button onClick={() => handleStatusUpdate(row.id, 'CHECKED_IN')} className="bg-green-100 hover:bg-green-600 text-green-700 hover:text-white px-3 py-1.5 rounded text-[11px] font-bold transition-colors">
                             Check-In Patient
                           </button>
                         )}
+                        {/* FIX: This button now opens the modal and passes the appointment data! */}
                         {row.status === 'CHECKED_IN' && (
-                          <button onClick={() => handleStatusUpdate(row.id, 'COMPLETED')} className="bg-yellow-100 hover:bg-yellow-500 text-yellow-700 hover:text-white px-3 py-1.5 rounded text-[11px] font-bold transition-colors">
+                          <button onClick={() => setBillingAppointment(row)} className="bg-yellow-100 hover:bg-yellow-500 text-yellow-700 hover:text-white px-3 py-1.5 rounded text-[11px] font-bold transition-colors">
                             Generate Bill
                           </button>
                         )}
@@ -258,7 +257,16 @@ const StaffDashboard = () => {
 
       <RegisterPatientModal isOpen={isRegisterModalOpen} onClose={() => setIsRegisterModalOpen(false)} onSuccess={() => { setIsRegisterModalOpen(false); fetchDashboardData(); }} />
       <NewAppointmentModal isOpen={isAppointmentModalOpen} onClose={() => setIsAppointmentModalOpen(false)} onSuccess={() => { setIsAppointmentModalOpen(false); fetchDashboardData(); }} />
+      
+      {/* FIX: Actually render the GenerateBillModal so it can pop up! */}
+      <GenerateBillModal 
+        isOpen={!!billingAppointment} 
+        onClose={() => setBillingAppointment(null)} 
+        appointment={billingAppointment}
+        onSuccess={() => { setBillingAppointment(null); fetchDashboardData(); }} 
+      />
     </StaffLayout>
   );
 };
+
 export default StaffDashboard;

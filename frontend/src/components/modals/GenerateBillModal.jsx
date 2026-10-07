@@ -11,8 +11,8 @@ const GenerateBillModal = ({ isOpen, onClose, appointment, onSuccess }) => {
   useEffect(() => {
     if (isOpen && appointment) {
       setStep(1); setBillDetails(null);
-      setDescription(`${appointment.case} - Consultation & Treatment`);
-      setAmount(appointment.case.includes('Rehab') ? '1200' : '600');
+      setDescription(`${appointment.case || 'Consultation'} - Treatment`);
+      setAmount(appointment.case?.includes('Rehab') ? '1200' : '600');
     }
   }, [isOpen, appointment]);
 
@@ -24,9 +24,8 @@ const GenerateBillModal = ({ isOpen, onClose, appointment, onSuccess }) => {
     axios.post(`http://localhost:8080/api/billing/appointment/${appointment.id}`, { amount: parseFloat(amount), description })
       .then(res => {
         setBillDetails(res.data);
-        setStep(2); // Move to receipt view
+        setStep(2); // Move to receipt view safely
         setIsSubmitting(false);
-        onSuccess(); // Refreshes dashboard behind the scenes
       })
       .catch(err => {
         alert("Failed to generate bill.");
@@ -34,9 +33,14 @@ const GenerateBillModal = ({ isOpen, onClose, appointment, onSuccess }) => {
       });
   };
 
+  const handleCloseReceipt = () => {
+    onSuccess(); // Refresh the dashboard now
+    onClose();   // Close the modal
+  };
+
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col transform transition-all">
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 print:bg-white print:backdrop-blur-none">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col transform transition-all print:shadow-none print:max-w-none print:w-full">
         {step === 1 ? (
           <>
             <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-[#f8f9fc]">
@@ -76,9 +80,9 @@ const GenerateBillModal = ({ isOpen, onClose, appointment, onSuccess }) => {
               <div className="flex justify-between text-sm mb-2"><span className="text-slate-500">Date:</span> <span className="font-semibold text-slate-800">{new Date().toLocaleDateString()}</span></div>
               <div className="flex justify-between text-lg font-bold border-t border-slate-200 pt-2 mt-2"><span className="text-slate-800">Total Paid:</span> <span className="text-green-600">₹{billDetails?.amount}</span></div>
             </div>
-            <div className="flex gap-3 w-full">
+            <div className="flex gap-3 w-full print:hidden">
               <button onClick={() => window.print()} className="flex-1 bg-[#2563eb] hover:bg-blue-700 text-white py-2.5 rounded-lg text-[13px] font-bold">Print Receipt</button>
-              <button onClick={onClose} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-lg text-[13px] font-bold">Close</button>
+              <button onClick={handleCloseReceipt} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-lg text-[13px] font-bold">Close</button>
             </div>
           </div>
         )}
@@ -86,4 +90,5 @@ const GenerateBillModal = ({ isOpen, onClose, appointment, onSuccess }) => {
     </div>
   );
 };
+
 export default GenerateBillModal;

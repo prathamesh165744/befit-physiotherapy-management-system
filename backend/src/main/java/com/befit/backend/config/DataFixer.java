@@ -44,6 +44,8 @@ public class DataFixer {
                 billRepository.save(b);
             }
         }
+
         System.out.println("✅ ALL USERS AND DATA SYNCED TO KARVE-ROAD BRANCH");
+        
     }
 }
