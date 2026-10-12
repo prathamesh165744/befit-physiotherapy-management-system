@@ -24,4 +24,13 @@ public class JwtUtil {
                 .compact();
     }
 
+
+    /** Returns the email stored in the token, or throws if the token is invalid/expired. */
+    public String extractEmail(String bearerHeader) {
+        if (bearerHeader == null || !bearerHeader.startsWith("Bearer ")) {
+            throw new RuntimeException("Missing or invalid Authorization header");
+        }
+        return Jwts.parserBuilder().setSigningKey(key).build()
+                .parseClaimsJws(bearerHeader.substring(7)).getBody().getSubject();
+    }
 }

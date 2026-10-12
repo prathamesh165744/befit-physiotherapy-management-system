@@ -3,7 +3,10 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "appointments")
+@Table(name = "appointments", indexes = {
+        @Index(name = "idx_appt_branch_date", columnList = "branch_id, appointment_date"),
+        @Index(name = "idx_appt_patient", columnList = "patient_id")
+})
 public class Appointment {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
     @ManyToOne @JoinColumn(name = "patient_id", nullable = false) private Patient patient;

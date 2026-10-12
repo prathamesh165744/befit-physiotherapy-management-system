@@ -1,121 +1,205 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
-import StaffLayout from '../layouts/StaffLayout';
+import { useNavigate } from 'react-router-dom';
 
 const PatientProfile = () => {
-  const { id } = useParams();
-  const [patient, setPatient] = useState(null);
-  const [appointments, setAppointments] = useState([]);
+  const [profile, setProfile] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const navigate = useNavigate();
+
+  // Form state for allowed update fields
+  const [formData, setFormData] = useState({
+    fullName: '',
+    phone: '',
+    emergencyContact: '',
+    gender: ''
+  });
+
+  // Setup Axios config to include the secure JWT token
+  const getAuthConfig = () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/'); // Kick out unauthenticated users
+      throw new Error("No token found");
+    }
+    return { headers: { Authorization: `Bearer ${token}` } };
+  };
 
   useEffect(() => {
-    const fetchPatientData = async () => {
-      setIsLoading(true);
-      try {
-        const pRes = await axios.get(`http://localhost:8080/api/patients/${id}`);
-        setPatient(pRes.data);
-        const aRes = await axios.get(`http://localhost:8080/api/appointments/patient/${id}`);
-        setAppointments(aRes.data || []);
-      } catch (err) {
-        console.error("Failed to fetch profile", err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchPatientData();
-  }, [id]);
+    fetchMyProfile();
+  }, []);
 
-  if (isLoading) {
-    return <StaffLayout><div className="p-10 text-slate-500 font-medium">Loading patient file...</div></StaffLayout>;
-  }
+  const fetchMyProfile = async () => {
+    setIsLoading(true);
+    try {
+      const res = await axios.get('http://localhost:8080/api/patients/me', getAuthConfig());
+      setProfile(res.data);
+      setFormData({
+        fullName: res.data.fullName || '',
+        phone: res.data.phone || '',
+        emergencyContact: res.data.emergencyContact || '',
+        gender: res.data.gender || ''
+      });
+      setIsLoading(false);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to load profile. Please log in again.');
+      setIsLoading(false);
+    }
+  };
 
-  if (!patient) {
-    return <StaffLayout><div className="p-10 text-red-500 font-medium">Patient not found!</div></StaffLayout>;
-  }
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+    
+    try {
+      const res = await axios.put('http://localhost:8080/api/patients/me', formData, getAuthConfig());
+      setProfile(res.data); // Update UI with confirmed database data
+      setIsEditing(false);
+      setSuccessMsg('Profile updated successfully!');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (err) {
+      setError('Failed to update profile. Please try again.');
+    }
+  };
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  if (isLoading) return <div className="flex justify-center items-center h-screen text-slate-500 font-bold">Loading securely...</div>;
+  if (error && !profile) return <div className="p-8 text-red-500 font-bold text-center">{error}</div>;
 
   return (
-    <StaffLayout>
-      <div className="max-w-[1200px] mx-auto pb-10">
+    <div className="min-h-screen bg-[#f8f9fc] p-8 font-sans">
+      <div className="max-w-3xl mx-auto">
         
-        {/* Header & Back Button */}
-        <div className="mb-6">
-          <Link to="/staff-dashboard/patients" className="text-sm font-bold text-blue-600 hover:underline flex items-center gap-1 mb-4">
-            &larr; Back to Directory
-          </Link>
-          <div className="flex justify-between items-end">
-            <div className="flex items-center gap-5">
-              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-2xl font-bold">
-                {patient.fullName.substring(0, 2).toUpperCase()}
+        {/* Header */}
+        <div className="flex justify-between items-end mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-800">My Medical Profile</h1>
+            <p className="text-sm text-slate-500 mt-1">Manage your personal information and contacts</p>
+          </div>
+          <button onClick={() => navigate('/patient-dashboard')} className="text-blue-600 hover:text-blue-800 text-sm font-bold">
+            &larr; Back to Dashboard
+          </button>
+        </div>
+
+        {/* Success Alert */}
+        {successMsg && (
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6 font-semibold shadow-sm">
+            ✓ {successMsg}
+          </div>
+        )}
+        {error && isEditing && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 font-semibold shadow-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Profile Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+          
+          <div className="bg-blue-600 px-8 py-6 flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-white text-blue-600 rounded-full flex items-center justify-center text-2xl font-bold uppercase shadow-md">
+                {profile?.fullName ? profile.fullName.charAt(0) : 'P'}
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-slate-800">{patient.fullName}</h1>
-                <p className="text-[13px] text-slate-500 mt-1 font-medium">REG ID: REG-{patient.id} • Registered: {patient.registrationDate || 'N/A'}</p>
+                <h2 className="text-xl font-bold text-white">{profile?.fullName}</h2>
+                <p className="text-blue-100 text-sm font-medium">Patient ID: {profile?.id}</p>
               </div>
             </div>
-            <span className="bg-emerald-100 text-emerald-700 font-bold px-3 py-1.5 rounded-lg text-xs uppercase tracking-wider">Active Patient</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-12 gap-6">
-          
-          {/* Left Column: Personal & Medical Details */}
-          <div className="col-span-4 space-y-6">
-            
-            {/* Contact Info Card */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Contact Details</h3>
-              <div className="space-y-4 text-[13px]">
-                <div><span className="text-slate-500 block mb-0.5">Phone Number</span><span className="font-semibold text-slate-800">{patient.phone}</span></div>
-                <div><span className="text-slate-500 block mb-0.5">Gender / DOB</span><span className="font-semibold text-slate-800">{patient.gender || 'N/A'} • {patient.dateOfBirth || 'N/A'}</span></div>
-                <div><span className="text-slate-500 block mb-0.5">Emergency Contact</span><span className="font-semibold text-red-600">{patient.emergencyContact || 'Not provided'}</span></div>
-              </div>
-            </div>
-
-            {/* Medical History Card */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Medical Notes</h3>
-              <p className="text-[13px] text-slate-700 leading-relaxed font-medium bg-slate-50 p-4 rounded-lg border border-slate-100">
-                {patient.medicalHistory || "No initial medical history recorded."}
-              </p>
-            </div>
-            
+            {!isEditing && (
+              <button onClick={() => setIsEditing(true)} className="bg-white/20 hover:bg-white/30 text-white px-5 py-2 rounded-lg text-sm font-bold transition">
+                Edit Profile
+              </button>
+            )}
           </div>
 
-          {/* Right Column: Appointment Timeline */}
-          <div className="col-span-8 bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-            <h3 className="text-[17px] font-bold text-slate-800 mb-6">Treatment Timeline</h3>
-            
-            <div className="space-y-4">
-              {appointments.length === 0 ? (
-                <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  <p className="text-slate-500 font-medium">No past appointments found for this patient.</p>
+          <div className="p-8">
+            {isEditing ? (
+              <form onSubmit={handleUpdate} className="space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Full Name</label>
+                    <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} required className="w-full bg-[#f4f7fe] border border-transparent rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:bg-white transition" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Phone Number</label>
+                    <input type="tel" name="phone" value={formData.phone} onChange={handleChange} required className="w-full bg-[#f4f7fe] border border-transparent rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:bg-white transition" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Emergency Contact</label>
+                    <input type="tel" name="emergencyContact" value={formData.emergencyContact} onChange={handleChange} required className="w-full bg-[#f4f7fe] border border-transparent rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:bg-white transition" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Gender</label>
+                    <select name="gender" value={formData.gender} onChange={handleChange} className="w-full bg-[#f4f7fe] border border-transparent rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:bg-white transition">
+                      <option value="">Select...</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
                 </div>
-              ) : (
-                appointments.map((apt) => (
-                  <div key={apt.id} className="flex gap-4 p-4 border border-slate-100 rounded-xl hover:bg-slate-50 transition">
-                    <div className="flex flex-col items-center justify-center bg-blue-50 text-blue-700 rounded-lg p-3 w-20 shrink-0">
-                      <span className="text-xs font-bold uppercase">{new Date(apt.appointmentDate).toLocaleString('default', { month: 'short' })}</span>
-                      <span className="text-xl font-black">{new Date(apt.appointmentDate).getDate()}</span>
-                      <span className="text-[10px] font-bold mt-1">{new Date(apt.appointmentDate).getFullYear()}</span>
+                
+                <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+                  <button type="button" onClick={() => { setIsEditing(false); setError(''); }} className="px-6 py-2.5 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-100 transition">Cancel</button>
+                  <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-bold shadow-sm transition">Save Changes</button>
+                </div>
+              </form>
+            ) : (
+              <div className="grid grid-cols-2 gap-y-8 gap-x-6">
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</p>
+                  <p className="text-slate-800 font-semibold text-lg">{profile?.fullName}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Phone Number</p>
+                  <p className="text-slate-800 font-semibold text-lg">{profile?.phone || 'Not provided'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Emergency Contact</p>
+                  <p className="text-slate-800 font-semibold text-lg">{profile?.emergencyContact || 'Not provided'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Gender</p>
+                  <p className="text-slate-800 font-semibold text-lg">{profile?.gender || 'Not specified'}</p>
+                </div>
+                
+                {/* Read-Only System Fields */}
+                <div className="col-span-2 pt-6 border-t border-slate-100">
+                  <h3 className="text-sm font-bold text-slate-800 mb-4">Clinic Information (Read-Only)</h3>
+                  <div className="grid grid-cols-3 gap-6">
+                    <div className="bg-slate-50 p-4 rounded-xl">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Branch</p>
+                      <p className="text-slate-700 font-semibold">{profile?.branchId || 'N/A'}</p>
                     </div>
-                    <div className="flex-1 flex flex-col justify-center">
-                      <div className="flex justify-between items-start mb-1">
-                        <h4 className="text-[15px] font-bold text-slate-800">{apt.caseType || 'Consultation'}</h4>
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider ${apt.status === 'COMPLETED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{apt.status}</span>
-                      </div>
-                      <p className="text-[13px] text-slate-500 font-medium mb-1">Dr. {apt.doctorName || 'Staff'}</p>
-                      <p className="text-[12px] text-slate-400">Appointment ID: APT-{apt.id}</p>
+                    <div className="bg-slate-50 p-4 rounded-xl">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Registered On</p>
+                      <p className="text-slate-700 font-semibold">{profile?.registrationDate ? new Date(profile.registrationDate).toLocaleDateString() : 'N/A'}</p>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-xl">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Blood Group</p>
+                      <p className="text-slate-700 font-semibold text-red-600">{profile?.bloodGroup || 'Unknown'}</p>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                </div>
+              </div>
+            )}
           </div>
-
         </div>
+
       </div>
-    </StaffLayout>
+    </div>
   );
 };
+
 export default PatientProfile;
