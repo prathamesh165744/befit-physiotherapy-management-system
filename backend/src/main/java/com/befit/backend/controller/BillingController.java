@@ -46,6 +46,7 @@ public class BillingController {
         // Safely extract patient name
         String patientName = apt.getPatient() != null ? apt.getPatient().getFullName() : "Walk-in Patient";
         bill.setPatientName(patientName);
+        if (apt.getPatient() != null) bill.setPatientId(apt.getPatient().getId());
         
         // Safely extract branch
         bill.setBranchId(apt.getBranchId() != null ? apt.getBranchId() : "KARVE-ROAD");
