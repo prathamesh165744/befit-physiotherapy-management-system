@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios, { errorMessage } from '../api';
+import { fmtDate, fmtDateTime, money } from '../utils/format';
 import { useNavigate } from 'react-router-dom';
 
 const PatientProfile = () => {
@@ -18,24 +19,30 @@ const PatientProfile = () => {
     gender: ''
   });
 
-  // Setup Axios config to include the secure JWT token
-  const getAuthConfig = () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      navigate('/'); // Kick out unauthenticated users
-      throw new Error("No token found");
-    }
-    return { headers: { Authorization: `Bearer ${token}` } };
-  };
+  // Branch change + history (a patient may ask to move to another branch; old visits/invoices stay at the old branch)
+  const [branches, setBranches] = useState([]);
+  const [transfers, setTransfers] = useState([]);
+  const [history, setHistory] = useState(null);
+  const [targetBranch, setTargetBranch] = useState('');
+  const [reason, setReason] = useState('');
+  const [branchMsg, setBranchMsg] = useState({ type: '', text: '' });
+  const [branchBusy, setBranchBusy] = useState(false);
 
   useEffect(() => {
     fetchMyProfile();
   }, []);
 
+  const loadExtras = async () => {
+    try {
+      const [b, t, h] = await Promise.all([axios.get('/api/branches'), axios.get('/api/patients/me/transfers'), axios.get('/api/patients/me/history')]);
+      setBranches(b.data); setTransfers(t.data); setHistory(h.data);
+    } catch { /* the profile itself still works without these */ }
+  };
+
   const fetchMyProfile = async () => {
     setIsLoading(true);
     try {
-      const res = await axios.get('http://localhost:8080/api/patients/me', getAuthConfig());
+      const res = await axios.get('/api/patients/me');
       setProfile(res.data);
       setFormData({
         fullName: res.data.fullName || '',
@@ -44,9 +51,10 @@ const PatientProfile = () => {
         gender: res.data.gender || ''
       });
       setIsLoading(false);
+      loadExtras();
     } catch (err) {
-      console.error(err);
-      setError('Failed to load profile. Please log in again.');
+      // A real 401 is redirected to login centrally (api.js). Anything else is shown honestly, without blaming the session.
+      setError(await errorMessage(err, 'We could not load your profile. Please try again.'));
       setIsLoading(false);
     }
   };
@@ -57,7 +65,7 @@ const PatientProfile = () => {
     setSuccessMsg('');
     
     try {
-      const res = await axios.put('http://localhost:8080/api/patients/me', formData, getAuthConfig());
+      const res = await axios.put('/api/patients/me', formData);
       setProfile(res.data); // Update UI with confirmed database data
       setIsEditing(false);
       setSuccessMsg('Profile updated successfully!');
@@ -65,8 +73,32 @@ const PatientProfile = () => {
       // Clear success message after 3 seconds
       setTimeout(() => setSuccessMsg(''), 3000);
     } catch (err) {
-      setError('Failed to update profile. Please try again.');
+      setError(await errorMessage(err, 'Failed to update profile. Please try again.'));
     }
+  };
+
+  const requestTransfer = async (e) => {
+    e.preventDefault();
+    setBranchBusy(true); setBranchMsg({ type: '', text: '' });
+    try {
+      const res = await axios.put('/api/patients/me/branch', { branchId: targetBranch, reason: reason || null });
+      setBranchMsg({ type: 'ok', text: res.data.status === 'APPROVED' ? 'Your branch has been changed.' : 'Request sent. The new branch will review it.' });
+      setTargetBranch(''); setReason('');
+      fetchMyProfile();
+    } catch (err) {
+      setBranchMsg({ type: 'error', text: await errorMessage(err, 'Could not request the branch change.') });
+    } finally { setBranchBusy(false); }
+  };
+
+  const cancelTransfer = async () => {
+    setBranchBusy(true); setBranchMsg({ type: '', text: '' });
+    try {
+      await axios.delete('/api/patients/me/branch-request');
+      setBranchMsg({ type: 'ok', text: 'Request cancelled.' });
+      fetchMyProfile();
+    } catch (err) {
+      setBranchMsg({ type: 'error', text: await errorMessage(err, 'Could not cancel the request.') });
+    } finally { setBranchBusy(false); }
   };
 
   const handleChange = (e) => {
@@ -74,7 +106,12 @@ const PatientProfile = () => {
   };
 
   if (isLoading) return <div className="flex justify-center items-center h-screen text-slate-500 font-bold">Loading securely...</div>;
-  if (error && !profile) return <div className="p-8 text-red-500 font-bold text-center">{error}</div>;
+  if (error && !profile) return (
+    <div className="p-8 text-center">
+      <p className="text-red-500 font-bold mb-4">{error}</p>
+      <button onClick={fetchMyProfile} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-bold">Try again</button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#f8f9fc] p-8 font-sans">
@@ -86,7 +123,7 @@ const PatientProfile = () => {
             <h1 className="text-3xl font-bold text-slate-800">My Medical Profile</h1>
             <p className="text-sm text-slate-500 mt-1">Manage your personal information and contacts</p>
           </div>
-          <button onClick={() => navigate('/patient-dashboard')} className="text-blue-600 hover:text-blue-800 text-sm font-bold">
+          <button onClick={() => navigate('/dashboard')} className="text-blue-600 hover:text-blue-800 text-sm font-bold">
             &larr; Back to Dashboard
           </button>
         </div>
@@ -180,7 +217,7 @@ const PatientProfile = () => {
                   <div className="grid grid-cols-3 gap-6">
                     <div className="bg-slate-50 p-4 rounded-xl">
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Branch</p>
-                      <p className="text-slate-700 font-semibold">{profile?.branchId || 'N/A'}</p>
+                      <p className="text-slate-700 font-semibold">{profile?.branchName || profile?.branchId || 'N/A'}</p>
                     </div>
                     <div className="bg-slate-50 p-4 rounded-xl">
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Registered On</p>
@@ -196,6 +233,72 @@ const PatientProfile = () => {
             )}
           </div>
         </div>
+
+
+        {/* Branch */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 mt-8">
+          <h3 className="text-sm font-bold text-slate-800 mb-1">My Branch</h3>
+          <p className="text-sm text-slate-500 mb-4">You are registered at <b>{profile?.branchName || profile?.branchId}</b>. Your earlier visits and invoices always stay with the branch where they happened.</p>
+          {branchMsg.text && (
+            <div className={`${branchMsg.type === 'error' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'} border px-4 py-3 rounded-lg mb-4 text-sm font-semibold`}>{branchMsg.text}</div>
+          )}
+          {profile?.pendingTransfer ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-wrap justify-between items-center gap-3">
+              <div className="text-sm text-amber-900">Waiting for approval: move to <b>{profile.pendingTransfer.toBranchName}</b> (requested {fmtDate(profile.pendingTransfer.requestedAt)})</div>
+              <button disabled={branchBusy} onClick={cancelTransfer} className="text-sm font-bold text-red-600 hover:underline disabled:opacity-50">Cancel request</button>
+            </div>
+          ) : (
+            <form onSubmit={requestTransfer} className="flex flex-wrap gap-3 items-end">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Move to</label>
+                <select value={targetBranch} onChange={(e) => setTargetBranch(e.target.value)} required className="bg-[#f4f7fe] rounded-lg px-4 py-3 text-sm outline-none min-w-[220px]">
+                  <option value="">Select a branch…</option>
+                  {branches.filter((b) => b.id !== profile?.branchId).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Reason (optional)</label>
+                <input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} className="w-full bg-[#f4f7fe] rounded-lg px-4 py-3 text-sm outline-none" />
+              </div>
+              <button type="submit" disabled={branchBusy || !targetBranch} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-sm font-bold disabled:opacity-50">Request branch change</button>
+            </form>
+          )}
+          {transfers.length > 0 && (
+            <ul className="mt-5 divide-y divide-slate-100 text-sm">
+              {transfers.map((t) => (
+                <li key={t.id} className="py-2 flex flex-wrap justify-between gap-2">
+                  <span>{t.fromBranchName} → <b>{t.toBranchName}</b></span>
+                  <span className="text-slate-500">{t.status} • {fmtDate(t.requestedAt)}{t.decisionNote ? ` • “${t.decisionNote}”` : ''}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* History across branches */}
+        {history && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 mt-8">
+            <h3 className="text-sm font-bold text-slate-800 mb-4">My Visits & Invoices (all branches)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[13px] text-slate-600">
+                <thead className="text-[10px] uppercase font-bold text-slate-400"><tr><th className="py-2 pr-4">Date</th><th className="py-2 pr-4">Branch</th><th className="py-2 pr-4">Visit</th><th className="py-2">Status</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {history.appointments.length === 0 && <tr><td colSpan="4" className="py-4 text-slate-400">No visits yet.</td></tr>}
+                  {history.appointments.map((a) => <tr key={a.id}><td className="py-2 pr-4">{fmtDateTime(a.appointmentDate)}</td><td className="py-2 pr-4">{a.branchName || a.branchId}</td><td className="py-2 pr-4">{a.caseType} • {a.doctorName}</td><td className="py-2 font-semibold">{a.status}</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+            <div className="overflow-x-auto mt-6">
+              <table className="w-full text-left text-[13px] text-slate-600">
+                <thead className="text-[10px] uppercase font-bold text-slate-400"><tr><th className="py-2 pr-4">Invoice</th><th className="py-2 pr-4">Branch</th><th className="py-2 pr-4 text-right">Total</th><th className="py-2 pr-4 text-right">Balance</th><th className="py-2">Status</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {history.bills.length === 0 && <tr><td colSpan="5" className="py-4 text-slate-400">No invoices yet.</td></tr>}
+                  {history.bills.map((b) => <tr key={b.id}><td className="py-2 pr-4 font-bold text-blue-600">{b.invoiceNumber}</td><td className="py-2 pr-4">{b.branchName || b.branchId}</td><td className="py-2 pr-4 text-right">{money(b.totalAmount)}</td><td className="py-2 pr-4 text-right">{money(b.balanceDue)}</td><td className="py-2 font-semibold">{b.status}</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

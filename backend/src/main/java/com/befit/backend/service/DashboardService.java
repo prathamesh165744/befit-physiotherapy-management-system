@@ -3,9 +3,14 @@ package com.befit.backend.service;
 import com.befit.backend.dto.DashboardDTO;
 import com.befit.backend.entity.Appointment;
 import com.befit.backend.entity.Patient;
+import com.befit.backend.entity.Branch;
 import com.befit.backend.repository.AppointmentRepository;
+import com.befit.backend.repository.BranchRepository;
+import com.befit.backend.security.AuthUser;
+import com.befit.backend.security.BranchAccess;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -20,10 +25,22 @@ import java.util.Map;
 @Service
 public class DashboardService {
     @Autowired private AppointmentRepository appointmentRepository;
+    @Autowired private BranchRepository branchRepository;
+    @Autowired private BranchAccess access;
 
-    public DashboardDTO getReceptionistDashboardData(String branchId, String dateStr) {
+    /** The branch comes from the logged-in user (admins may pick one with branchId / ALL) - never blindly from the URL. */
+    @Transactional(readOnly = true)
+    public DashboardDTO getReceptionistDashboardData(AuthUser user, String requestedBranch, String dateStr) {
         DashboardDTO dto = new DashboardDTO();
-        String targetBranch = (branchId != null && !branchId.isEmpty()) ? branchId : "KARVE-ROAD";
+        List<String> branchIds = access.visibleBranchIds(user, requestedBranch);
+        if (branchIds.size() == 1) {
+            Branch b = branchRepository.findById(branchIds.get(0)).orElse(null);
+            dto.setBranchId(branchIds.get(0));
+            dto.setBranchName(b != null ? b.getName() : branchIds.get(0));
+            dto.setBranchAddress(b != null ? b.getAddress() : null);
+        } else {
+            dto.setBranchName("All branches");
+        }
         
         LocalDate targetDate = LocalDate.now();
         try {
@@ -37,7 +54,7 @@ public class DashboardService {
         LocalDateTime startOfDay = LocalDateTime.of(targetDate, LocalTime.MIN);
         LocalDateTime endOfDay = LocalDateTime.of(targetDate, LocalTime.MAX);
         
-        List<Appointment> dayAppointments = appointmentRepository.findByBranchIdAndAppointmentDateBetweenOrderByAppointmentDateAsc(targetBranch, startOfDay, endOfDay);
+        List<Appointment> dayAppointments = appointmentRepository.findDay(branchIds, startOfDay, endOfDay);
 
         int checkedInCount = 0; int waitingCount = 0; long totalWaitMinutes = 0;
         List<Map<String, Object>> upcomingList = new ArrayList<>();

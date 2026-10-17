@@ -7,6 +7,7 @@ import com.befit.backend.entity.Patient;
 import com.befit.backend.entity.PatientBranchHistory;
 import com.befit.backend.entity.Role;
 import com.befit.backend.entity.User;
+import com.befit.backend.exception.ApiException;
 import com.befit.backend.repository.BranchRepository;
 import com.befit.backend.repository.PatientBranchHistoryRepository;
 import com.befit.backend.repository.PatientRepository;
@@ -38,13 +39,13 @@ public class UserService {
     @Transactional
     public User registerPatient(RegisterRequest request) {
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
-            throw new RuntimeException("An account with this email already exists.");
+            throw ApiException.conflict("EMAIL_EXISTS", "An account with this email already exists.");
         }
         String branchId = (request.getBranchId() != null && !request.getBranchId().isBlank())
                 ? request.getBranchId() : "KARVE-ROAD";
         var branch = branchRepository.findById(branchId)
-                .orElseThrow(() -> new RuntimeException("Unknown branch: " + branchId));
-        if (!branch.isActive()) throw new RuntimeException("This branch is not accepting patients right now.");
+                .orElseThrow(() -> ApiException.badRequest("Unknown branch: " + branchId));
+        if (!branch.isActive()) throw ApiException.badRequest("This branch is not accepting patients right now.");
 
         // 1) login identity only
         User user = new User();
@@ -60,7 +61,7 @@ public class UserService {
         patient.setUser(savedUser);
         patient.setFullName(request.getFullName());
         patient.setPhone(request.getPhone());
-        patient.setGender(request.getGender());
+        patient.setGender(PatientService.normalizeGender(request.getGender()));
         patient.setDateOfBirth(request.getDob());
         patient.setAddress(request.getAddress());
         patient.setEmergencyContact(request.getEmergencyContactNumber());
@@ -74,16 +75,19 @@ public class UserService {
         Patient savedPatient = patientRepository.save(patient);
 
         // 3) first branch-history row
-        historyRepository.save(new PatientBranchHistory(savedPatient.getId(), branchId));
+        PatientBranchHistory first = new PatientBranchHistory(savedPatient.getId(), branchId);
+        first.setReason("Registered online");
+        historyRepository.save(first);
         return savedUser;
     }
 
     public AuthResponse loginUser(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found with this email"));
+        // One message for "no such user", "wrong password" and "disabled account": do not reveal which emails exist.
+        User user = userRepository.findByEmail(request.getEmail() == null ? "" : request.getEmail().trim())
+                .orElseThrow(() -> new ApiException(401, "INVALID_CREDENTIALS", "Invalid email or password."));
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new RuntimeException("Invalid password");
+        if (request.getPassword() == null || !passwordEncoder.matches(request.getPassword(), user.getPassword()) || !user.isActive()) {
+            throw new ApiException(401, "INVALID_CREDENTIALS", "Invalid email or password.");
         }
 
         String token = jwtUtil.generateToken(user.getEmail());

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import axios from '../api';
 import { useNavigate, Link } from 'react-router-dom';
 
 export default function Login() {
   const [formData, setFormData] = useState({ email: '', password: '' });
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() => (new URLSearchParams(window.location.search).get('expired') ? 'Your session has expired. Please log in again.' : ''));
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -13,7 +13,7 @@ export default function Login() {
 const handleLogin = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post('http://localhost:8080/api/auth/login', formData);
+      const res = await axios.post('/api/auth/login', formData);
       
       // Save all auth and routing details
       localStorage.setItem('token', res.data.token);
@@ -30,7 +30,7 @@ const handleLogin = async (e) => {
         navigate('/staff-dashboard');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid credentials');
+      setError(err.response?.data?.message || (err.response ? 'Login failed. Please try again.' : 'Cannot reach the server. Please try again.'));
     }
   };
   return (
