@@ -1,72 +1,52 @@
 package com.befit.backend.controller;
-import com.befit.backend.entity.Appointment;
-import com.befit.backend.entity.AppointmentStatus;
-import com.befit.backend.entity.Patient;
-import com.befit.backend.repository.AppointmentRepository;
-import com.befit.backend.repository.PatientRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
+
+import com.befit.backend.dto.AppointmentCreateRequest;
+import com.befit.backend.dto.AppointmentDTO;
+import com.befit.backend.dto.PageResponse;
+import com.befit.backend.security.BranchAccess;
+import com.befit.backend.service.AppointmentService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/appointments")
-@CrossOrigin(origins = "*")
 public class AppointmentController {
-    @Autowired private AppointmentRepository appointmentRepository;
-    @Autowired private PatientRepository patientRepository;
+    private final AppointmentService appointmentService;
+    private final BranchAccess access;
 
+    public AppointmentController(AppointmentService appointmentService, BranchAccess access) {
+        this.appointmentService = appointmentService;
+        this.access = access;
+    }
+
+    /** Paged. ?date=yyyy-MM-dd &statuses=COMPLETED,CANCELLED &page=0 &size=20 &dir=asc|desc  (branchId only honoured for admins) */
     @GetMapping
-    public ResponseEntity<List<Appointment>> getAllAppointments(@RequestParam(required = false, defaultValue = "KARVE-ROAD") String branchId) {
-        return ResponseEntity.ok(appointmentRepository.findByBranchId(branchId));
+    public PageResponse<AppointmentDTO> list(@RequestParam(required = false) String branchId,
+                                             @RequestParam(required = false) String date,
+                                             @RequestParam(required = false) String statuses,
+                                             @RequestParam(defaultValue = "0") int page,
+                                             @RequestParam(defaultValue = "20") int size,
+                                             @RequestParam(defaultValue = "desc") String dir) {
+        return appointmentService.list(access.current(), branchId, date, statuses, page, size, dir);
     }
 
-    public static class AppointmentPayload {
-        public Long patientId; public Long doctorId; public String doctorName;
-        public String appointmentDate; public String appointmentTime; public String caseType; public String branchId;
-    }
-
+    /** Books at the patient's current branch. */
     @PostMapping
-    public ResponseEntity<?> createAppointment(@RequestBody AppointmentPayload payload) {
-        try {
-            Patient patient = patientRepository.findById(payload.patientId).orElseThrow(() -> new RuntimeException("Patient not found"));
-            Appointment appointment = new Appointment();
-            appointment.setPatient(patient); 
-            appointment.setDoctorId(payload.doctorId);
-            appointment.setDoctorName(payload.doctorName);
-            appointment.setCaseType(payload.caseType);
-            appointment.setAppointmentDate(LocalDateTime.parse(payload.appointmentDate));
-            appointment.setBranchId(payload.branchId != null ? payload.branchId : "KARVE-ROAD");
-            appointment.setStatus(AppointmentStatus.WAITING);
-            appointment.setCheckInTime(LocalDateTime.now()); 
-            return ResponseEntity.ok(appointmentRepository.save(appointment));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+    public AppointmentDTO create(@Valid @RequestBody AppointmentCreateRequest request) {
+        return appointmentService.create(access.current(), request);
     }
 
-    // NEW: API TO UPDATE STATUS (CHECK-IN / BILL)
+    /** Body: { "status": "CHECKED_IN" } */
     @PutMapping("/{id}/status")
-    public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestBody Map<String, String> payload) {
-        try {
-            Appointment appointment = appointmentRepository.findById(id).orElseThrow(() -> new RuntimeException("Appointment not found"));
-            AppointmentStatus newStatus = AppointmentStatus.valueOf(payload.get("status").toUpperCase());
-            appointment.setStatus(newStatus);
-            if(newStatus == AppointmentStatus.CHECKED_IN) {
-                appointment.setCheckInTime(LocalDateTime.now());
-            }
-            return ResponseEntity.ok(appointmentRepository.save(appointment));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Failed to update status");
-        }
+    public AppointmentDTO updateStatus(@PathVariable Long id, @RequestBody Map<String, String> payload) {
+        return appointmentService.updateStatus(access.current(), id, payload.get("status"));
     }
 
-    // NEW: API TO FETCH A PATIENT'S APPOINTMENT HISTORY
     @GetMapping("/patient/{patientId}")
-    public ResponseEntity<List<Appointment>> getPatientAppointments(@PathVariable Long patientId) {
-        return ResponseEntity.ok(appointmentRepository.findByPatientIdOrderByAppointmentDateDesc(patientId));
+    public List<AppointmentDTO> forPatient(@PathVariable Long patientId) {
+        return appointmentService.forPatient(access.current(), patientId);
     }
 }

@@ -5,7 +5,9 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "appointments", indexes = {
         @Index(name = "idx_appt_branch_date", columnList = "branch_id, appointment_date"),
-        @Index(name = "idx_appt_patient", columnList = "patient_id")
+        @Index(name = "idx_appt_patient", columnList = "patient_id"),
+        @Index(name = "idx_appt_branch_status", columnList = "branch_id, status"),
+        @Index(name = "idx_appt_doctor_date", columnList = "doctor_id, appointment_date")
 })
 public class Appointment {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;

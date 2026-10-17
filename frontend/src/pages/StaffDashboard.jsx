@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios, { errorMessage } from '../api';
 import StaffLayout from '../layouts/StaffLayout';
 import RegisterPatientModal from '../components/modals/RegisterPatientModal';
 import NewAppointmentModal from '../components/modals/NewAppointmentModal';
@@ -10,8 +10,10 @@ const StaffDashboard = () => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [dashboardData, setDashboardData] = useState({
-    todayTotal: 0, checkedIn: 0, waiting: 0, newInquiries: 0, upcomingAppointments: [], currentRegistrations: []
+    todayTotal: 0, checkedIn: 0, waiting: 0, newInquiries: 0, upcomingAppointments: [], currentRegistrations: [],
+    branchName: '', branchAddress: ''
   });
+  const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
@@ -22,7 +24,8 @@ const StaffDashboard = () => {
 
   const fetchDashboardData = () => {
     setIsLoading(true);
-    axios.get(`http://localhost:8080/api/dashboard/staff-data?date=${selectedDate}`)
+    setLoadError('');
+    axios.get('/api/dashboard/staff-data', { params: { date: selectedDate } })
       .then(res => {
         const data = res.data || {};
         setDashboardData({
@@ -31,12 +34,13 @@ const StaffDashboard = () => {
           waiting: data.waiting || 0,
           newInquiries: data.newInquiries || 0,
           upcomingAppointments: Array.isArray(data.upcomingAppointments) ? data.upcomingAppointments : [],
-          currentRegistrations: Array.isArray(data.currentRegistrations) ? data.currentRegistrations : []
+          currentRegistrations: Array.isArray(data.currentRegistrations) ? data.currentRegistrations : [],
+          branchName: data.branchName || '', branchAddress: data.branchAddress || ''
         });
         setIsLoading(false);
       })
-      .catch(err => {
-        console.error("Failed to fetch dashboard data", err);
+      .catch(async err => {
+        setLoadError(await errorMessage(err, 'Could not load the dashboard.'));
         setIsLoading(false);
       });
   };
@@ -46,12 +50,12 @@ const StaffDashboard = () => {
   }, [selectedDate]);
 
   const handleStatusUpdate = (appointmentId, newStatus) => {
-    axios.put(`http://localhost:8080/api/appointments/${appointmentId}/status`, { status: newStatus })
+    axios.put(`/api/appointments/${appointmentId}/status`, { status: newStatus })
       .then(() => {
         fetchDashboardData(); 
       })
-      .catch(err => {
-        alert("Failed to update status. " + err.message);
+      .catch(async err => {
+        alert("Failed to update status. " + await errorMessage(err));
       });
   };
 
@@ -61,13 +65,14 @@ const StaffDashboard = () => {
     <StaffLayout>
       <div className="max-w-[1400px] mx-auto pb-10">
         
+        {loadError && <div className="mb-4 bg-red-50 border border-red-100 text-red-700 text-sm rounded-lg p-3">{loadError}</div>}
         {/* Header Section */}
         <div className="flex justify-between items-end mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Front Desk — Karve Road</h1>
+            <h1 className="text-2xl font-bold text-slate-800">Front Desk — {dashboardData.branchName || 'BeFit'}</h1>
             <p className="text-[13px] text-slate-500 mt-1 flex items-center gap-1.5">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-              12th Floor, BeFit Tower, Pune
+              {dashboardData.branchAddress || dashboardData.branchName || ''}
             </p>
           </div>
           <div className="flex items-center gap-4">

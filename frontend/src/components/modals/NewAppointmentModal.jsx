@@ -1,42 +1,54 @@
-﻿import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect } from 'react';
+import axios, { errorMessage } from '../../api';
 
 const NewAppointmentModal = ({ isOpen, onClose, onSuccess }) => {
   const [patients, setPatients] = useState([]);
-  const [formData, setFormData] = useState({
-    patientId: '', doctorId: '2', doctorName: 'Dr. Himanshu Jain', appointmentDate: '', appointmentTime: '', caseType: 'New Case'
-  });
+  const [doctors, setDoctors] = useState([]);
+  const [error, setError] = useState('');
+  const blank = { patientId: '', doctorId: '', doctorName: '', appointmentDate: '', appointmentTime: '', caseType: 'New Case' };
+  const [formData, setFormData] = useState(blank);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      axios.get('http://localhost:8080/api/patients')
+      setError('');
+      // Only patients of the receptionist's own branch, and only that branch's doctors (the server decides the branch).
+      axios.get('/api/patients/options')
         .then(res => setPatients(res.data))
-        .catch(err => console.error("Failed to fetch patients", err));
+        .catch(async err => setError(await errorMessage(err, 'Could not load patients.')));
+      axios.get('/api/staff/doctors')
+        .then(res => {
+          setDoctors(res.data);
+          if (res.data.length) setFormData(f => ({ ...f, doctorId: String(res.data[0].id), doctorName: res.data[0].fullName }));
+        })
+        .catch(async err => setError(await errorMessage(err, 'Could not load doctors.')));
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    
-    const dateTimeString = `${formData.appointmentDate}T${formData.appointmentTime}:00`;
-    const payload = { ...formData, appointmentDate: dateTimeString };
+    setIsSubmitting(true); setError('');
 
-    axios.post('http://localhost:8080/api/appointments', payload)
-      .then(res => {
-        alert("Appointment scheduled successfully!");
-        setIsSubmitting(false);
-        setFormData({ patientId: '', doctorId: '2', doctorName: 'Dr. Himanshu Jain', appointmentDate: '', appointmentTime: '', caseType: 'New Case' });
-        onSuccess(); 
-      })
-      .catch(err => {
-        console.error(err);
-        alert("Failed to schedule appointment.");
-        setIsSubmitting(false);
-      });
+    const dateTimeString = `${formData.appointmentDate}T${formData.appointmentTime}:00`;
+    const payload = {
+      patientId: Number(formData.patientId),
+      doctorId: Number(formData.doctorId),
+      doctorName: formData.doctorName,
+      appointmentDate: dateTimeString,
+      caseType: formData.caseType,
+    };
+    try {
+      await axios.post('/api/appointments', payload);
+      alert("Appointment scheduled successfully!");
+      setFormData({ ...blank, doctorId: formData.doctorId, doctorName: formData.doctorName });
+      onSuccess();
+    } catch (err) {
+      setError(await errorMessage(err, 'Failed to schedule the appointment.'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -50,6 +62,7 @@ const NewAppointmentModal = ({ isOpen, onClose, onSuccess }) => {
         </div>
         
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {error && <div className="bg-red-50 border border-red-100 text-red-700 text-sm rounded-lg p-3">{error}</div>}
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Select Patient *</label>
             <select required className="w-full bg-[#f4f7fe] border border-transparent rounded-lg px-4 py-2.5 text-[13px] focus:outline-none focus:border-[#2563eb] focus:bg-white transition"
@@ -64,7 +77,7 @@ const NewAppointmentModal = ({ isOpen, onClose, onSuccess }) => {
           <div className="grid grid-cols-2 gap-5">
             <div>
               <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Date *</label>
-              <input required type="date" className="w-full bg-[#f4f7fe] border border-transparent rounded-lg px-4 py-2.5 text-[13px] focus:outline-none focus:border-[#2563eb] focus:bg-white transition text-slate-700"
+              <input required type="date" min={new Date().toISOString().slice(0,10)} className="w-full bg-[#f4f7fe] border border-transparent rounded-lg px-4 py-2.5 text-[13px] focus:outline-none focus:border-[#2563eb] focus:bg-white transition text-slate-700"
                 value={formData.appointmentDate} onChange={e => setFormData({...formData, appointmentDate: e.target.value})} />
             </div>
             <div>
@@ -78,10 +91,12 @@ const NewAppointmentModal = ({ isOpen, onClose, onSuccess }) => {
             <div>
               <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Doctor *</label>
               <select required className="w-full bg-[#f4f7fe] border border-transparent rounded-lg px-4 py-2.5 text-[13px] focus:outline-none focus:border-[#2563eb] focus:bg-white transition"
-                value={formData.doctorName} onChange={e => setFormData({...formData, doctorName: e.target.value})}>
-                <option value="Dr. Himanshu Jain">Dr. Himanshu Jain</option>
-                <option value="Dr. Smita Patil">Dr. Smita Patil</option>
-                <option value="Dr. Rohan Shah">Dr. Rohan Shah</option>
+                value={formData.doctorId} onChange={e => {
+                  const d = doctors.find(x => String(x.id) === e.target.value);
+                  setFormData({...formData, doctorId: e.target.value, doctorName: d ? d.fullName : ''});
+                }}>
+                {doctors.length === 0 && <option value="">No doctors at this branch</option>}
+                {doctors.map(d => <option key={d.id} value={d.id}>{d.fullName}</option>)}
               </select>
             </div>
             <div>

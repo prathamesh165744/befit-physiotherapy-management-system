@@ -1,81 +1,104 @@
 package com.befit.backend.controller;
 
-import com.befit.backend.dto.PatientProfileUpdate;
-import com.befit.backend.entity.Patient;
-import com.befit.backend.repository.PatientRepository;
+import com.befit.backend.dto.*;
+import com.befit.backend.security.BranchAccess;
 import com.befit.backend.service.PatientService;
-import com.befit.backend.util.JwtUtil;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.befit.backend.service.TransferService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/patients")
-@CrossOrigin(origins = "*")
 public class PatientController {
 
-    @Autowired private PatientRepository patientRepository;
-    @Autowired private PatientService patientService;
-    @Autowired private JwtUtil jwtUtil;
+    private final PatientService patientService;
+    private final TransferService transferService;
+    private final BranchAccess access;
 
-    // ---------- Staff ----------
-
-    /** Default: patients currently at this branch. ?scope=all adds patients who moved away but still have visits/bills here. */
-    @GetMapping
-    public ResponseEntity<List<Patient>> getPatients(
-            @RequestParam(required = false, defaultValue = "KARVE-ROAD") String branchId,
-            @RequestParam(required = false, defaultValue = "current") String scope) {
-        return ResponseEntity.ok("all".equals(scope)
-                ? patientRepository.findCurrentOrPastByBranch(branchId)
-                : patientRepository.findByBranchId(branchId));
+    public PatientController(PatientService patientService, TransferService transferService, BranchAccess access) {
+        this.patientService = patientService;
+        this.transferService = transferService;
+        this.access = access;
     }
 
+    // ---------------------------------------------------------------- staff (ADMIN / DOCTOR / RECEPTIONIST)
+
+    /** Paged directory. scope=current (default) | all (also patients who moved away but have visits/invoices here). */
+    @GetMapping
+    public PageResponse<PatientSummaryDTO> list(@RequestParam(required = false) String branchId,
+                                                @RequestParam(defaultValue = "current") String scope,
+                                                @RequestParam(required = false) String q,
+                                                @RequestParam(defaultValue = "0") int page,
+                                                @RequestParam(defaultValue = "20") int size,
+                                                @RequestParam(defaultValue = "id") String sort,
+                                                @RequestParam(defaultValue = "desc") String dir) {
+        return patientService.list(access.current(), branchId, scope, q, page, size, sort, dir);
+    }
+
+    /** Dropdown list (id, name, phone) of current patients - used by the New Appointment form. */
+    @GetMapping("/options")
+    public List<PatientSummaryDTO> options(@RequestParam(required = false) String branchId) {
+        return patientService.options(access.current(), branchId);
+    }
+
+    /** "View File" */
     @GetMapping("/{id}")
-    public ResponseEntity<Patient> getPatientById(@PathVariable Long id) {
-        return patientRepository.findById(id).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+    public PatientProfileDTO getById(@PathVariable Long id) {
+        return patientService.getForStaff(access.current(), id);
+    }
+
+    @GetMapping("/{id}/history")
+    public PatientHistoryDTO history(@PathVariable Long id) {
+        return patientService.historyForStaff(access.current(), id);
     }
 
     @PostMapping
-    public ResponseEntity<Patient> registerPatient(@RequestBody Patient patient) {
-        if (patient.getBranchId() == null) patient.setBranchId("KARVE-ROAD");
-        if (patient.getRegistrationDate() == null) patient.setRegistrationDate(LocalDate.now());
-        return ResponseEntity.ok(patientRepository.save(patient));
+    public PatientSummaryDTO register(@Valid @RequestBody PatientRegistrationRequest request) {
+        return patientService.register(access.current(), request);
     }
 
-    // ---------- Logged-in patient (identified by the JWT, never by an id in the URL) ----------
+    /** ADMIN only: move a patient to another branch immediately. */
+    @PostMapping("/{id}/transfer")
+    public TransferDTO adminTransfer(@PathVariable Long id, @Valid @RequestBody TransferRequestBody body) {
+        return transferService.adminTransfer(access.current(), id, body);
+    }
+
+    // ---------------------------------------------------------------- the logged-in patient (role PATIENT, identified by the token)
 
     @GetMapping("/me")
-    public ResponseEntity<?> myProfile(@RequestHeader(value = "Authorization", required = false) String auth) {
-        try {
-            return ResponseEntity.ok(patientService.getPatientProfileByEmail(jwtUtil.extractEmail(auth)));
-        } catch (Exception e) {
-            return ResponseEntity.status(401).body(e.getMessage());
-        }
+    public PatientProfileDTO myProfile() {
+        return patientService.myProfile(access.current());
     }
 
     @PutMapping("/me")
-    public ResponseEntity<?> updateMyProfile(@RequestHeader(value = "Authorization", required = false) String auth,
-                                             @RequestBody PatientProfileUpdate update) {
-        try {
-            return ResponseEntity.ok(patientService.updatePatientProfile(jwtUtil.extractEmail(auth), update));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+    public PatientProfileDTO updateMyProfile(@Valid @RequestBody PatientProfileUpdate update) {
+        return patientService.updateMyProfile(access.current(), update);
     }
 
-    /** Body: { "branchId": "BANER" } */
+    @GetMapping("/me/history")
+    public PatientHistoryDTO myHistory() {
+        return patientService.myHistory(access.current());
+    }
+
+    /**
+     * Body: { "branchId": "BANER", "reason": "optional" }.
+     * With approval required (default) this creates a PENDING request; otherwise the move happens immediately.
+     */
     @PutMapping("/me/branch")
-    public ResponseEntity<?> changeMyBranch(@RequestHeader(value = "Authorization", required = false) String auth,
-                                            @RequestBody Map<String, String> body) {
-        try {
-            Patient p = patientService.changeBranch(jwtUtil.extractEmail(auth), body.get("branchId"));
-            return ResponseEntity.ok(p);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+    public TransferDTO requestBranchChange(@Valid @RequestBody TransferRequestBody body) {
+        return transferService.requestTransfer(access.current(), body);
+    }
+
+    @GetMapping("/me/transfers")
+    public List<TransferDTO> myTransfers() {
+        return transferService.myTransfers(access.current());
+    }
+
+    @DeleteMapping("/me/branch-request")
+    public TransferDTO cancelMyRequest() {
+        return transferService.cancelMine(access.current());
     }
 }

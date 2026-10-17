@@ -1,5 +1,5 @@
-﻿import React, { useState } from 'react';
-import axios from 'axios';
+import React, { useState } from 'react';
+import axios, { errorMessage, branchForCreate } from '../../api';
 
 const RegisterPatientModal = ({ isOpen, onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
@@ -9,27 +9,25 @@ const RegisterPatientModal = ({ isOpen, onClose, onSuccess }) => {
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    
-    const payload = { ...formData };
+
+    const payload = { ...formData, branchId: branchForCreate() };
     if (payload.dateOfBirth === '') payload.dateOfBirth = null;
     if (payload.emergencyContact === '') payload.emergencyContact = null;
 
-    axios.post('http://localhost:8080/api/patients', payload)
-      .then(res => {
-        alert("Patient registered successfully!");
-        setIsSubmitting(false);
-        setFormData({ fullName: '', phone: '', gender: 'M', dateOfBirth: '', emergencyContact: '' });
-        onSuccess(); 
-      })
-      .catch(err => {
-        console.error(err);
-        const errorMsg = err.response && err.response.data ? JSON.stringify(err.response.data) : err.message;
-        alert(`Failed to register patient: ${errorMsg}`);
-        setIsSubmitting(false);
-      });
+    try {
+      // The patient is registered at the receptionist's own branch - decided by the server, not by this form.
+      await axios.post('/api/patients', payload);
+      alert("Patient registered successfully!");
+      setFormData({ fullName: '', phone: '', gender: 'M', dateOfBirth: '', emergencyContact: '' });
+      onSuccess();
+    } catch (err) {
+      alert(`Failed to register patient: ${await errorMessage(err)}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

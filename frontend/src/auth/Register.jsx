@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect } from 'react';
+import axios from '../api';
 import { useNavigate, Link } from 'react-router-dom';
 
 export default function Register() {
@@ -11,6 +11,13 @@ export default function Register() {
     painType: '', painRating: '',
     branchId: 'KARVE-ROAD' // Added default branch
   });
+  // Branches come from the server, so a new branch appears here without any code change.
+  const [branches, setBranches] = useState([
+    { id: 'KARVE-ROAD', name: 'Karve Road, Pune' }, { id: 'BANER', name: 'Baner, Pune' }, { id: 'VIMAN-NAGAR', name: 'Viman Nagar, Pune' },
+  ]);
+  useEffect(() => {
+    axios.get('/api/branches').then((res) => { if (res.data?.length) setBranches(res.data); }).catch(() => { /* keep the fallback list */ });
+  }, []);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
@@ -38,11 +45,11 @@ export default function Register() {
     }
     setError('');
     try {
-      await axios.post('http://localhost:8080/api/auth/register', formData);
+      await axios.post('/api/auth/register', formData);
       alert('Registration successful! Please log in.');
       navigate('/login');
     } catch (err) {
-      setError(err.response?.data || 'Registration failed');
+      setError(err.response?.data?.message || (err.response ? 'Registration failed' : 'Cannot reach the server. Please try again.'));
     }
   };
 
@@ -105,9 +112,7 @@ export default function Register() {
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Clinic Branch *</label>
                   <select name="branchId" value={formData.branchId} onChange={handleChange} required className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                    <option value="KARVE-ROAD">Karve Road, Pune</option>
-                    <option value="BANER">Baner, Pune</option>
-                    <option value="VIMAN-NAGAR">Viman Nagar, Pune</option>
+                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
 

@@ -1,0 +1,36 @@
+package com.befit.backend.entity;
+
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
+
+/** A patient's request to move to another branch, and what happened to it. Kept forever as the transfer audit trail. */
+@Entity
+@Table(name = "branch_transfer_requests", indexes = {
+        @Index(name = "idx_transfer_patient", columnList = "patient_id"),
+        @Index(name = "idx_transfer_to_status", columnList = "to_branch_id, status")
+})
+public class BranchTransferRequest {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
+    @Column(name = "patient_id", nullable = false) private Long patientId;
+    @Column(name = "from_branch_id", nullable = false) private String fromBranchId;
+    @Column(name = "to_branch_id", nullable = false) private String toBranchId;
+    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 20) private TransferStatus status = TransferStatus.PENDING;
+    @Column(length = 500) private String reason;
+    @Column(name = "requested_by") private String requestedBy;
+    @Column(name = "requested_at", nullable = false) private LocalDateTime requestedAt = LocalDateTime.now();
+    @Column(name = "decided_by") private String decidedBy;
+    @Column(name = "decided_at") private LocalDateTime decidedAt;
+    @Column(name = "decision_note", length = 500) private String decisionNote;
+
+    public Long getId() { return id; }
+    public Long getPatientId() { return patientId; } public void setPatientId(Long v) { this.patientId = v; }
+    public String getFromBranchId() { return fromBranchId; } public void setFromBranchId(String v) { this.fromBranchId = v; }
+    public String getToBranchId() { return toBranchId; } public void setToBranchId(String v) { this.toBranchId = v; }
+    public TransferStatus getStatus() { return status; } public void setStatus(TransferStatus v) { this.status = v; }
+    public String getReason() { return reason; } public void setReason(String v) { this.reason = v; }
+    public String getRequestedBy() { return requestedBy; } public void setRequestedBy(String v) { this.requestedBy = v; }
+    public LocalDateTime getRequestedAt() { return requestedAt; } public void setRequestedAt(LocalDateTime v) { this.requestedAt = v; }
+    public String getDecidedBy() { return decidedBy; } public void setDecidedBy(String v) { this.decidedBy = v; }
+    public LocalDateTime getDecidedAt() { return decidedAt; } public void setDecidedAt(LocalDateTime v) { this.decidedAt = v; }
+    public String getDecisionNote() { return decisionNote; } public void setDecisionNote(String v) { this.decisionNote = v; }
+}

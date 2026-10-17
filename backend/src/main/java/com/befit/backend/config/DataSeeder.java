@@ -4,10 +4,13 @@ import com.befit.backend.entity.Role;
 import com.befit.backend.entity.User;
 import com.befit.backend.repository.UserRepository;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+/** Step 3 of 4 on startup: the three original test staff accounts (only if no admin exists yet). */
 @Component
+@Order(3)
 public class DataSeeder implements CommandLineRunner {
 
     private final UserRepository userRepository;
@@ -40,6 +43,7 @@ public class DataSeeder implements CommandLineRunner {
             doctor.setPhone("2222222222");
             doctor.setPassword(passwordEncoder.encode("doctor123"));
             doctor.setRole(Role.DOCTOR);
+            doctor.setBranchId("KARVE-ROAD");
             doctor.setActive(true);
             userRepository.save(doctor);
 
@@ -50,8 +54,20 @@ public class DataSeeder implements CommandLineRunner {
             receptionist.setPhone("3333333333");
             receptionist.setPassword(passwordEncoder.encode("staff123"));
             receptionist.setRole(Role.RECEPTIONIST);
+            receptionist.setBranchId("KARVE-ROAD");
             receptionist.setActive(true);
             userRepository.save(receptionist);
+
+                       // 4. Extra receptionist for the Baner branch
+            User baner = new User();
+            baner.setFullName("Front Desk Baner");
+            baner.setEmail("staff@befit.com");
+            baner.setPhone("3333333333");
+            baner.setPassword(passwordEncoder.encode("staff123"));
+            baner.setRole(Role.RECEPTIONIST);
+            baner.setBranchId("BANER");
+            baner.setActive(true);
+            userRepository.save(baner);
 
             System.out.println("✅ Test Staff Accounts Seeded Successfully!");
         } else {

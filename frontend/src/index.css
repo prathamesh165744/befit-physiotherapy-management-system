@@ -1,1 +1,30 @@
 @import "tailwindcss";
+
+/* ---------- Print preview + A4 printing (see components/PrintPortal.jsx) ---------- */
+@page { size: A4; margin: 12mm; }
+
+.print-portal .print-overlay {
+  position: fixed; inset: 0; z-index: 200; overflow: auto;
+  background: rgba(15, 23, 42, 0.6); padding: 20px 12px;
+}
+.print-portal .print-toolbar {
+  max-width: 210mm; margin: 0 auto 12px; display: flex; align-items: center;
+  justify-content: space-between; gap: 8px; color: #fff;
+}
+.print-portal .print-paper {
+  background: #fff; color: #111827; width: 210mm; max-width: 100%; min-height: 297mm;
+  margin: 0 auto; padding: 14mm; box-sizing: border-box; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+@media print {
+  /* hide the whole app; only the print portal (a direct child of <body>) stays */
+  body > *:not(.print-portal) { display: none !important; }
+  html, body { background: #fff !important; }
+  .print-portal .print-overlay { position: static; inset: auto; overflow: visible; background: none; padding: 0; }
+  .print-portal .no-print { display: none !important; }
+  .print-portal .print-paper { width: auto; max-width: none; min-height: 0; padding: 0; box-shadow: none; }
+  .print-portal table { page-break-inside: auto; }
+  .print-portal thead { display: table-header-group; }
+  .print-portal tr { break-inside: avoid; page-break-inside: avoid; }
+  .print-portal * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
