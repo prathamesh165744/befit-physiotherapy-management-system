@@ -5,9 +5,11 @@ import com.befit.backend.security.BranchAccess;
 import com.befit.backend.service.PatientService;
 import com.befit.backend.service.TransferService;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -42,6 +44,20 @@ public class PatientController {
     @GetMapping("/options")
     public List<PatientSummaryDTO> options(@RequestParam(required = false) String branchId) {
         return patientService.options(access.current(), branchId);
+    }
+
+    /**
+     * Cross-branch duplicate check (ADMIN / RECEPTIONIST only - enforced in SecurityConfig AND in the service).
+     * Identify by regId, by phone (full number), or by fullName + dateOfBirth. Returns limited identity data only.
+     * Declared before /{id}; the literal path always wins over the {id} pattern.
+     */
+    @GetMapping("/cross-branch-search")
+    public List<CrossBranchPatientDTO> crossBranchSearch(@RequestParam(required = false) String regId,
+                                                         @RequestParam(required = false) String phone,
+                                                         @RequestParam(required = false) String fullName,
+                                                         @RequestParam(required = false)
+                                                         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateOfBirth) {
+        return patientService.searchAcrossBranches(access.current(), regId, phone, fullName, dateOfBirth);
     }
 
     /** "View File" */

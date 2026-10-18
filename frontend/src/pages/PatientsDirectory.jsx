@@ -3,6 +3,8 @@ import axios, { errorMessage } from '../api';
 import { Link } from 'react-router-dom';
 import StaffLayout from '../layouts/StaffLayout';
 import { fmtDate } from '../utils/format';
+import CrossBranchPatientSearchModal from '../components/modals/CrossBranchPatientSearchModal';
+import RegisterPatientModal from '../components/modals/RegisterPatientModal';
 
 const PatientsDirectory = () => {
   const [data, setData] = useState({ items: [], totalItems: 0, totalPages: 0 });
@@ -14,6 +16,10 @@ const PatientsDirectory = () => {
   const [page, setPage] = useState(0);
   const size = 15;
   const myBranch = localStorage.getItem('branchId');
+  const canCrossSearch = ['ADMIN', 'RECEPTIONIST'].includes(localStorage.getItem('role'));
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [prefill, setPrefill] = useState(null);
 
   useEffect(() => {
     const t = setTimeout(() => { setQ(search.trim()); setPage(0); }, 350);
@@ -43,7 +49,13 @@ const PatientsDirectory = () => {
             <h1 className="text-2xl font-bold text-slate-800">Patients Directory</h1>
             <p className="text-[13px] text-slate-500 mt-1">Manage and view registered clinic patients</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {canCrossSearch && (
+              <button onClick={() => setSearchOpen(true)}
+                className="bg-white border border-[#2563eb] text-[#2563eb] hover:bg-blue-50 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition">
+                Find patient in other branches
+              </button>
+            )}
             <select value={scope} onChange={(e) => { setScope(e.target.value); setPage(0); }}
               className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500">
               <option value="current">Patients at this branch</option>
@@ -121,6 +133,15 @@ const PatientsDirectory = () => {
           </div>
         </div>
       </div>
+      {canCrossSearch && (
+        <>
+          {/* The directory above stays branch-restricted; this modal only returns limited identity data. */}
+          <CrossBranchPatientSearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)}
+            onRegisterNew={(values) => { setPrefill(values); setSearchOpen(false); setRegisterOpen(true); }} />
+          <RegisterPatientModal isOpen={registerOpen} initialValues={prefill} onClose={() => setRegisterOpen(false)}
+            onSuccess={() => { setRegisterOpen(false); load(); }} />
+        </>
+      )}
     </StaffLayout>
   );
 };

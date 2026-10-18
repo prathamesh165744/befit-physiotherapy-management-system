@@ -3,10 +3,13 @@ package com.befit.backend.service;
 import com.befit.backend.dto.*;
 import com.befit.backend.entity.Patient;
 import com.befit.backend.entity.PatientBranchHistory;
+import com.befit.backend.entity.Role;
 import com.befit.backend.exception.ApiException;
 import com.befit.backend.repository.*;
 import com.befit.backend.security.AuthUser;
 import com.befit.backend.security.BranchAccess;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -14,6 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,6 +27,10 @@ import java.util.Set;
 public class PatientService {
     private static final Set<String> SORTABLE = Set.of("fullName", "id", "registrationDate");
     private static final int HISTORY_LIMIT = 200;
+    private static final Logger log = LoggerFactory.getLogger(PatientService.class);
+    /** Cross-branch search returns at most this many rows, so it can never be used to dump the patient table. */
+    private static final int CROSS_SEARCH_LIMIT = 10;
+    private static final int MIN_SEARCH_PHONE_DIGITS = 10;
 
     private final PatientRepository patientRepository;
     private final PatientBranchHistoryRepository historyRepository;
@@ -92,12 +101,71 @@ public class PatientService {
         return buildHistory(p, access.visibleBranchIds(user, null));
     }
 
+    /**
+     * Cross-branch "does this person already exist?" lookup, used before registering a new patient.
+     * Only ADMIN and RECEPTIONIST may call it. It needs an exact identifier (REG id, full phone number, or full name +
+     * date of birth) - free-text browsing of other branches is not possible - returns at most 10 rows, and each row
+     * holds only limited identifying data (see CrossBranchPatientDTO). If several identifiers are given, a patient must match all.
+     */
+    @Transactional(readOnly = true)
+    public List<CrossBranchPatientDTO> searchAcrossBranches(AuthUser user, String regId, String phone,
+                                                            String fullName, LocalDate dateOfBirth) {
+        requireCrossBranchRole(user);
+
+        boolean hasReg = regId != null && !regId.isBlank();
+        boolean hasPhone = phone != null && !phone.isBlank();
+        boolean hasName = fullName != null && !fullName.isBlank();
+        if (!hasReg && !hasPhone && !hasName && dateOfBirth == null) {
+            throw ApiException.badRequest("Enter a phone number, a REG ID, or a full name with date of birth to search.");
+        }
+        if (hasName != (dateOfBirth != null)) {
+            throw ApiException.badRequest("To search by name, enter both the full name and the date of birth.");
+        }
+        if (dateOfBirth != null && !dateOfBirth.isBefore(LocalDate.now())) {
+            throw ApiException.badRequest("Date of birth must be in the past.");
+        }
+
+        List<String> criteria = new ArrayList<>();
+        Map<Long, Patient> matches = null;
+
+        if (hasReg) {
+            criteria.add("regId");
+            Long id = parseRegId(regId);
+            Map<Long, Patient> m = new LinkedHashMap<>();
+            patientRepository.findById(id).ifPresent(p -> m.put(p.getId(), p));
+            matches = m;
+        }
+        if (hasPhone) {
+            criteria.add("phone");
+            String digits = digitsOf(phone);
+            if (digits.length() < MIN_SEARCH_PHONE_DIGITS) {
+                throw ApiException.badRequest("Enter the full phone number (at least " + MIN_SEARCH_PHONE_DIGITS + " digits).");
+            }
+            matches = intersect(matches, patientRepository.findByPhonePattern(phonePattern(digits), PageRequest.of(0, CROSS_SEARCH_LIMIT)));
+        }
+        if (hasName) {
+            criteria.add("name+dob");
+            matches = intersect(matches, patientRepository.findByNameAndDob(normalizeName(fullName), dateOfBirth, PageRequest.of(0, CROSS_SEARCH_LIMIT)));
+        }
+
+        Map<String, String> names = branchService.nameMap();
+        List<CrossBranchPatientDTO> out = matches.values().stream().limit(CROSS_SEARCH_LIMIT)
+                .map(p -> CrossBranchPatientDTO.of(p, names.get(p.getBranchId()), canOpenFile(user, p)))
+                .toList();
+        // Audit trail without personal data: who searched, with which kind of identifier, how many matched.
+        log.info("Cross-branch patient search by {} (branch {}): criteria={}, matches={}", user.email(), user.branchId(), criteria, out.size());
+        return out;
+    }
+
     @Transactional
     public PatientSummaryDTO register(AuthUser user, PatientRegistrationRequest r) {
         String branchId = access.branchForCreate(user, r.branchId());
+        String phone = r.phone().trim();
+        if (digitsOf(phone).length() < 7) throw ApiException.badRequest("Enter a valid phone number");
+        rejectDuplicate(user, r.fullName(), phone, r.dateOfBirth());
         Patient p = new Patient();
         p.setFullName(r.fullName().trim());
-        p.setPhone(r.phone().trim());
+        p.setPhone(phone);
         p.setGender(normalizeGender(r.gender()));
         p.setDateOfBirth(r.dateOfBirth());
         p.setEmergencyContact(blankToNull(r.emergencyContact()));
@@ -131,6 +199,71 @@ public class PatientService {
         }
         throw ApiException.forbidden("This patient is not registered at your branch.");
     }
+
+    // ------------------------------------------------------------------ cross-branch helpers
+
+    private void requireCrossBranchRole(AuthUser user) {
+        if (user.role() != Role.ADMIN && user.role() != Role.RECEPTIONIST) {
+            throw ApiException.forbidden("Only receptionists and administrators can search for patients across branches.");
+        }
+        if (!user.isAdmin() && (user.branchId() == null || user.branchId().isBlank())) {
+            throw ApiException.forbidden("Your account is not assigned to a branch. Please contact an administrator.");
+        }
+    }
+
+    /** May this user open the patient's file? Same rule as the normal directory: own branch (now) or an admin. */
+    private boolean canOpenFile(AuthUser user, Patient p) {
+        return user.isAdmin() || (user.branchId() != null && user.branchId().equals(p.getBranchId()));
+    }
+
+    /**
+     * Blocks registering a person who already exists in ANY branch:
+     * same full name + same phone number, or same full name + same date of birth.
+     * Only ADMIN / RECEPTIONIST are told who and where; anyone else gets a generic message.
+     */
+    private void rejectDuplicate(AuthUser user, String fullName, String phone, LocalDate dob) {
+        String name = normalizeName(fullName);
+        List<Patient> dups = patientRepository.findByNameAndPhonePattern(name, phonePattern(digitsOf(phone)), PageRequest.of(0, 1));
+        if (dups.isEmpty() && dob != null) {
+            dups = patientRepository.findByNameAndDob(name, dob, PageRequest.of(0, 1));
+        }
+        if (dups.isEmpty()) return;
+
+        Patient existing = dups.get(0);
+        boolean mayKnow = user.role() == Role.ADMIN || user.role() == Role.RECEPTIONIST;
+        if (!mayKnow) {
+            throw ApiException.conflict("DUPLICATE_PATIENT", "This patient is already registered. A new registration cannot be created.");
+        }
+        String branch = branchService.nameMap().get(existing.getBranchId());
+        boolean here = existing.getBranchId() != null && existing.getBranchId().equals(user.branchId());
+        throw ApiException.conflict("DUPLICATE_PATIENT", "This patient is already registered as REG-" + existing.getId()
+                + (here ? " at your branch." : " at " + (branch == null ? "another branch" : branch) + ".")
+                + " Please search for the existing patient instead of creating a new registration.");
+    }
+
+    private static Long parseRegId(String regId) {
+        String t = regId.trim().toUpperCase();
+        if (t.startsWith("REG-")) t = t.substring(4);
+        if (!t.matches("\\d{1,18}")) throw ApiException.badRequest("Enter a valid REG ID, for example REG-1024.");
+        return Long.parseLong(t);
+    }
+
+    private static Map<Long, Patient> intersect(Map<Long, Patient> current, List<Patient> found) {
+        Map<Long, Patient> next = new LinkedHashMap<>();
+        for (Patient p : found) {
+            if (current == null || current.containsKey(p.getId())) next.put(p.getId(), p);
+        }
+        return next;
+    }
+
+    static String digitsOf(String s) { return s == null ? "" : s.replaceAll("\\D", ""); }
+
+    /** Last 10 digits as a suffix match (so +91 prefixes do not matter); shorter numbers must match exactly. */
+    static String phonePattern(String digits) {
+        return digits.length() >= 10 ? "%" + digits.substring(digits.length() - 10) : digits;
+    }
+
+    static String normalizeName(String s) { return s == null ? "" : s.trim().replaceAll("\\s+", " ").toLowerCase(); }
 
     public Patient load(Long id) {
         return patientRepository.findById(id).orElseThrow(() -> ApiException.notFound("Patient not found."));
