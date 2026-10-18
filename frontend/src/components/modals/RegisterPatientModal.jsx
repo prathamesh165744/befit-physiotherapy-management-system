@@ -1,16 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios, { errorMessage, branchForCreate } from '../../api';
+import CrossBranchPatientSearchModal from './CrossBranchPatientSearchModal';
 
-const RegisterPatientModal = ({ isOpen, onClose, onSuccess }) => {
-  const [formData, setFormData] = useState({
-    fullName: '', phone: '', gender: 'M', dateOfBirth: '', emergencyContact: ''
-  });
+const EMPTY = { fullName: '', phone: '', gender: 'M', dateOfBirth: '', emergencyContact: '' };
+
+const RegisterPatientModal = ({ isOpen, onClose, onSuccess, initialValues }) => {
+  const [formData, setFormData] = useState({ ...EMPTY, ...(initialValues || {}) });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [duplicate, setDuplicate] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const canSearch = ['ADMIN', 'RECEPTIONIST'].includes(localStorage.getItem('role'));
+
+  // Pre-fill when opened from the search modal ("no match - register new patient")
+  useEffect(() => {
+    if (isOpen) { setFormData({ ...EMPTY, ...(initialValues || {}) }); setError(''); setDuplicate(false); }
+  }, [isOpen, initialValues]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(''); setDuplicate(false);
+    if (formData.phone.replace(/\D/g, '').length < 7) { setError('Enter a valid phone number.'); return; }
+    if (!formData.fullName.trim()) { setError('Full name is required.'); return; }
     setIsSubmitting(true);
 
     const payload = { ...formData, branchId: branchForCreate() };
@@ -21,10 +34,12 @@ const RegisterPatientModal = ({ isOpen, onClose, onSuccess }) => {
       // The patient is registered at the receptionist's own branch - decided by the server, not by this form.
       await axios.post('/api/patients', payload);
       alert("Patient registered successfully!");
-      setFormData({ fullName: '', phone: '', gender: 'M', dateOfBirth: '', emergencyContact: '' });
+      setFormData({ ...EMPTY });
       onSuccess();
     } catch (err) {
-      alert(`Failed to register patient: ${await errorMessage(err)}`);
+      // 409 DUPLICATE_PATIENT: the server found this person already registered (possibly at another branch)
+      if (err.response?.status === 409 && err.response?.data?.code === 'DUPLICATE_PATIENT') setDuplicate(true);
+      setError(await errorMessage(err, 'Failed to register patient.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -41,6 +56,20 @@ const RegisterPatientModal = ({ isOpen, onClose, onSuccess }) => {
         </div>
         
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {canSearch && (
+            <div className="flex items-center justify-between gap-3 bg-blue-50 border border-blue-100 rounded-lg px-4 py-2.5 text-[12px] text-blue-800">
+              <span>Is this patient already registered at another branch?</span>
+              <button type="button" onClick={() => setSearchOpen(true)} className="font-bold underline whitespace-nowrap">Search all branches</button>
+            </div>
+          )}
+          {error && (
+            <div className={`rounded-lg p-3 text-[13px] border ${duplicate ? 'bg-amber-50 border-amber-100 text-amber-800' : 'bg-red-50 border-red-100 text-red-700'}`}>
+              <p>{error}</p>
+              {duplicate && canSearch && (
+                <button type="button" onClick={() => setSearchOpen(true)} className="mt-2 font-bold underline">Find the existing patient</button>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Full Name *</label>
             <input required type="text" className="w-full bg-[#f4f7fe] border border-transparent rounded-lg px-4 py-2.5 text-[13px] focus:outline-none focus:border-[#2563eb] focus:bg-white transition"
@@ -85,6 +114,10 @@ const RegisterPatientModal = ({ isOpen, onClose, onSuccess }) => {
           </div>
         </form>
       </div>
+      {canSearch && searchOpen && (
+        <CrossBranchPatientSearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)}
+          initialValues={{ phone: formData.phone, fullName: formData.fullName, dateOfBirth: formData.dateOfBirth }} />
+      )}
     </div>
   );
 };

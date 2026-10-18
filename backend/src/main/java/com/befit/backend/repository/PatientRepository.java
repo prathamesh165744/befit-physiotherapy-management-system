@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -33,6 +34,22 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
     Page<Patient> searchCurrentOrPast(@Param("branchIds") Collection<String> branchIds, @Param("q") String q, Pageable pageable);
 
     Optional<Patient> findByUserEmail(String email);
+
+    // ---- cross-branch search / duplicate detection (NOT branch-filtered: only call from PatientService after a role check) ----
+
+    /** Phone with spaces, dashes, brackets and '+' stripped, so "+91 98765-43210" and "9876543210" compare equal. */
+    String PHONE_DIGITS = "replace(replace(replace(replace(replace(p.phone, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '')";
+
+    /** pattern: digits only, optionally prefixed with '%' (suffix match on the last 10 digits). */
+    @Query("select p from Patient p where " + PHONE_DIGITS + " like :pattern order by p.id")
+    List<Patient> findByPhonePattern(@Param("pattern") String pattern, Pageable pageable);
+
+    /** name: already trimmed + lower-cased. */
+    @Query("select p from Patient p where lower(trim(p.fullName)) = :name and p.dateOfBirth = :dob order by p.id")
+    List<Patient> findByNameAndDob(@Param("name") String name, @Param("dob") LocalDate dob, Pageable pageable);
+
+    @Query("select p from Patient p where lower(trim(p.fullName)) = :name and " + PHONE_DIGITS + " like :pattern order by p.id")
+    List<Patient> findByNameAndPhonePattern(@Param("name") String name, @Param("pattern") String pattern, Pageable pageable);
 
     // ---- startup backfill helpers (DataFixer) ----
     @Modifying
