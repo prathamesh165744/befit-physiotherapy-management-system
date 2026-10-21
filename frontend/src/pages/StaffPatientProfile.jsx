@@ -73,7 +73,12 @@ export default function StaffPatientProfile() {
   }
 
   const myBranch = localStorage.getItem('branchId');
-  const movedAway = !isAdmin && profile.branchId !== myBranch;
+  // The server decides this (accessLevel) and leaves sensitive fields out of the response; the UI only reflects it.
+  const limited = profile.accessLevel === 'TEMPORARY_VISIT' || profile.accessLevel === 'HISTORICAL';
+  const movedAway = !isAdmin && !limited && profile.branchId !== myBranch;
+  const limitedNote = profile.accessLevel === 'TEMPORARY_VISIT'
+    ? <>This patient is registered at <b>{profile.branchName || profile.branchId}</b> and is visiting your branch. You can see identification and <b>your branch’s</b> visits only; medical history, address, emergency contact and other branches’ records are not shared.</>
+    : <>This patient is registered at <b>{profile.branchName || profile.branchId}</b>. You can see identification and the visits from <b>your</b> branch only; other personal and medical details are not shared.</>;
 
   return (
     <StaffLayout>
@@ -90,9 +95,14 @@ export default function StaffPatientProfile() {
           </div>
           <div className="flex gap-2">
             {profile.pendingTransfer && <span className="text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100 rounded px-2 py-1">Transfer pending → {profile.pendingTransfer.toBranchName}</span>}
+            {limited && <span className="text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100 rounded px-2 py-1">{profile.accessLevel === 'TEMPORARY_VISIT' ? 'Visiting patient · limited view' : 'Limited view'}</span>}
             {movedAway && <span className="text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200 rounded px-2 py-1">Now at {profile.branchName}</span>}
           </div>
         </div>
+
+        {limited && (
+          <div className="mt-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3">{limitedNote}</div>
+        )}
 
         {movedAway && (
           <div className="mt-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3">
@@ -100,6 +110,18 @@ export default function StaffPatientProfile() {
           </div>
         )}
 
+        {limited ? (
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mt-6">
+            <h2 className="text-sm font-bold text-slate-800 mb-4">Identification</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+              {field('REG ID', profile.regId)}
+              {field('Phone (masked)', profile.phone)}
+              {field('Gender', profile.gender)}
+              {field('Date of birth', profile.dateOfBirth && fmtDate(profile.dateOfBirth))}
+              {field('Registered at', profile.branchName || profile.branchId)}
+            </div>
+          </div>
+        ) : (
         <div className="grid md:grid-cols-2 gap-6 mt-6">
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
             <h2 className="text-sm font-bold text-slate-800 mb-4">Personal information</h2>
@@ -123,8 +145,9 @@ export default function StaffPatientProfile() {
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{profile.medicalHistory || 'No medical history recorded.'}</p>
           </div>
         </div>
+        )}
 
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mt-6">
+        {!limited && <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mt-6">
           <h2 className="text-sm font-bold text-slate-800 mb-3">Branch history</h2>
           {history.branchHistory.length === 0 ? <p className="text-sm text-slate-400">No branch history.</p> : (
             <ul className="divide-y divide-slate-100">
@@ -136,10 +159,10 @@ export default function StaffPatientProfile() {
               ))}
             </ul>
           )}
-        </div>
+        </div>}
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mt-6 overflow-hidden">
-          <h2 className="text-sm font-bold text-slate-800 p-6 pb-3">Appointments {isAdmin ? '(all branches)' : ''}</h2>
+          <h2 className="text-sm font-bold text-slate-800 p-6 pb-3">Appointments {isAdmin ? '(all branches)' : limited ? '(this branch)' : ''}</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[13px] text-slate-600">
               <thead className="bg-[#f8f9fc] text-[10px] uppercase font-bold text-slate-400"><tr><th className="px-6 py-3">Date</th><th className="px-6 py-3">Doctor</th><th className="px-6 py-3">Case</th><th className="px-6 py-3">Branch</th><th className="px-6 py-3">Status</th></tr></thead>
@@ -155,7 +178,7 @@ export default function StaffPatientProfile() {
 
         {(localStorage.getItem('role') !== 'DOCTOR') && (
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mt-6 overflow-hidden">
-            <h2 className="text-sm font-bold text-slate-800 p-6 pb-3">Invoices {isAdmin ? '(all branches)' : ''}</h2>
+            <h2 className="text-sm font-bold text-slate-800 p-6 pb-3">Invoices {isAdmin ? '(all branches)' : limited ? '(this branch)' : ''}</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-[13px] text-slate-600">
                 <thead className="bg-[#f8f9fc] text-[10px] uppercase font-bold text-slate-400"><tr><th className="px-6 py-3">Invoice</th><th className="px-6 py-3">Date</th><th className="px-6 py-3">Branch</th><th className="px-6 py-3 text-right">Total</th><th className="px-6 py-3 text-right">Balance</th><th className="px-6 py-3">Status</th><th className="px-6 py-3"></th></tr></thead>
