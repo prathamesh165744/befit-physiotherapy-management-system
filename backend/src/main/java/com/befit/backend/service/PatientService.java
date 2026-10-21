@@ -8,6 +8,7 @@ import com.befit.backend.exception.ApiException;
 import com.befit.backend.repository.*;
 import com.befit.backend.security.AuthUser;
 import com.befit.backend.security.BranchAccess;
+import com.befit.backend.security.BranchAccess.PatientAccessLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -85,20 +86,34 @@ public class PatientService {
                 .map(p -> PatientSummaryDTO.of(p, names.get(p.getBranchId()))).toList();
     }
 
-    /** Staff opening a patient file (the "View File" button). */
+    /**
+     * Staff opening a patient file (the "View File" button). Home-branch staff and admins get the full profile;
+     * staff of another branch with a live visit (or past dealings) get the limited profile; anyone else gets 403.
+     */
     @Transactional(readOnly = true)
     public PatientProfileDTO getForStaff(AuthUser user, Long id) {
         Patient p = load(id);
-        requireStaffAccess(user, p);
-        return toProfile(p);
+        PatientAccessLevel level = requireStaffAccess(user, p);
+        if (level.isLimited()) {
+            log.info("Limited patient profile viewed by {} (branch {}): patient={}, access={}", user.email(), user.branchId(), p.getId(), level);
+            return PatientProfileDTO.limited(p, branchService.nameMap().get(p.getBranchId()), level.name());
+        }
+        return toProfile(p, PatientProfileDTO.FULL);
     }
 
-    /** Visits, invoices and branch moves of a patient - limited to the branches the caller may see. */
+    /**
+     * Visits, invoices and branch moves of a patient - limited to the branches the caller may see.
+     * In a limited view: only the caller's own branch's visits, invoices only for receptionists, and no branch-move log.
+     */
     @Transactional(readOnly = true)
     public PatientHistoryDTO historyForStaff(AuthUser user, Long id) {
         Patient p = load(id);
-        requireStaffAccess(user, p);
-        return buildHistory(p, access.visibleBranchIds(user, null));
+        PatientAccessLevel level = requireStaffAccess(user, p);
+        List<String> branches = access.visibleBranchIds(user, null);
+        if (level.isLimited()) {
+            return buildHistory(p, branches, user.role() == Role.RECEPTIONIST, false);
+        }
+        return buildHistory(p, branches, true, true);
     }
 
     /**
@@ -183,21 +198,18 @@ public class PatientService {
     }
 
     /**
-     * A staff member may open a patient if the patient is at their branch NOW, or was treated/billed there in the past
-     * (so the old branch can still see its own records). Admins may open anyone. Otherwise 403.
+     * Throws 403 unless the user may open this patient's file, and returns HOW MUCH they may see (see
+     * BranchAccess.patientAccess). Other services (billing, appointments) call this too, so one rule applies everywhere.
      */
-    public void requireStaffAccess(AuthUser user, Patient p) {
-        if (user.isAdmin()) return;
-        String b = user.branchId();
-        if (b == null || b.isBlank()) {
-            throw ApiException.forbidden("Your account is not assigned to a branch. Please contact an administrator.");
+    public PatientAccessLevel requireStaffAccess(AuthUser user, Patient p) {
+        PatientAccessLevel level = access.patientAccess(user, p);
+        if (level == PatientAccessLevel.DENIED) {
+            if (!user.isAdmin() && (user.branchId() == null || user.branchId().isBlank())) {
+                throw ApiException.forbidden("Your account is not assigned to a branch. Please contact an administrator.");
+            }
+            throw ApiException.forbidden("This patient is not registered at your branch.");
         }
-        if (b.equals(p.getBranchId())
-                || appointmentRepository.existsByPatientIdAndBranchId(p.getId(), b)
-                || billRepository.existsByPatientIdAndBranchId(p.getId(), b)) {
-            return;
-        }
-        throw ApiException.forbidden("This patient is not registered at your branch.");
+        return level;
     }
 
     // ------------------------------------------------------------------ cross-branch helpers
@@ -211,9 +223,9 @@ public class PatientService {
         }
     }
 
-    /** May this user open the patient's file? Same rule as the normal directory: own branch (now) or an admin. */
+    /** May this user open the patient's file (full or limited)? Same rule as the profile endpoint. */
     private boolean canOpenFile(AuthUser user, Patient p) {
-        return user.isAdmin() || (user.branchId() != null && user.branchId().equals(p.getBranchId()));
+        return access.patientAccess(user, p) != PatientAccessLevel.DENIED;
     }
 
     /**
@@ -273,7 +285,7 @@ public class PatientService {
 
     @Transactional(readOnly = true)
     public PatientProfileDTO myProfile(AuthUser user) {
-        return toProfile(mine(user));
+        return toProfile(mine(user), PatientProfileDTO.SELF);
     }
 
     @Transactional
@@ -287,13 +299,13 @@ public class PatientService {
         if (u.getEmergencyContactName() != null) p.setEmergencyContactName(u.getEmergencyContactName());
         if (u.getBloodGroup() != null) p.setBloodGroup(u.getBloodGroup());
         if (u.getOccupation() != null) p.setOccupation(u.getOccupation());
-        return toProfile(patientRepository.save(p));
+        return toProfile(patientRepository.save(p), PatientProfileDTO.SELF);
     }
 
     /** A patient sees their OWN history across every branch, each row labelled with the branch where it happened. */
     @Transactional(readOnly = true)
     public PatientHistoryDTO myHistory(AuthUser user) {
-        return buildHistory(mine(user), branchRepository.findAllIds());
+        return buildHistory(mine(user), branchRepository.findAllIds(), true, true);
     }
 
     // ------------------------------------------------------------------ helpers
@@ -303,18 +315,20 @@ public class PatientService {
                 .orElseThrow(() -> new ApiException(404, "PROFILE_NOT_FOUND", "No patient profile is linked to this account."));
     }
 
-    private PatientProfileDTO toProfile(Patient p) {
-        return PatientProfileDTO.of(p, branchService.nameMap().get(p.getBranchId()), transferService.pendingFor(p));
+    private PatientProfileDTO toProfile(Patient p, String accessLevel) {
+        return PatientProfileDTO.of(p, branchService.nameMap().get(p.getBranchId()), transferService.pendingFor(p), accessLevel);
     }
 
-    private PatientHistoryDTO buildHistory(Patient p, List<String> branchIds) {
+    private PatientHistoryDTO buildHistory(Patient p, List<String> branchIds, boolean includeBills, boolean includeBranchMoves) {
         Map<String, String> names = branchService.nameMap();
         PageRequest limit = PageRequest.of(0, HISTORY_LIMIT);
         var appts = appointmentRepository.findByPatientIdAndBranchIdInOrderByAppointmentDateDesc(p.getId(), branchIds, limit).stream()
                 .map(a -> AppointmentDTO.of(a, names.get(a.getBranchId()))).toList();
-        var bills = billRepository.findByPatientIdAndBranchIdInOrderByBillDateDesc(p.getId(), branchIds, limit).stream()
+        var bills = !includeBills ? List.<BillDTO>of()
+                : billRepository.findByPatientIdAndBranchIdInOrderByBillDateDesc(p.getId(), branchIds, limit).stream()
                 .map(b -> BillDTO.of(b, names.get(b.getBranchId()))).toList();
-        var stints = historyRepository.findByPatientIdAndBranchIdInOrderByFromDateDesc(p.getId(), branchIds).stream()
+        var stints = !includeBranchMoves ? List.<PatientHistoryDTO.BranchStint>of()
+                : historyRepository.findByPatientIdAndBranchIdInOrderByFromDateDesc(p.getId(), branchIds).stream()
                 .map(h -> new PatientHistoryDTO.BranchStint(h.getBranchId(), names.get(h.getBranchId()), h.getFromDate(),
                         h.getToDate(), h.getAuthorizedBy(), h.getReason())).toList();
         return new PatientHistoryDTO(appts, bills, stints);

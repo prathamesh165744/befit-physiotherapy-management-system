@@ -43,6 +43,17 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     List<Appointment> findByPatientIdOrderByAppointmentDateDesc(Long patientId, Pageable pageable);
 
     boolean existsByPatientIdAndBranchId(Long patientId, String branchId);
+
+    /**
+     * Temporary-visit check: does the patient have a live visit at this branch? Live = still open (statuses given),
+     * or finished (finishedStatus) no longer ago than {@code since}, so the desk can still close out the visit.
+     */
+    @Query("select count(a) > 0 from Appointment a where a.patient.id = :patientId and a.branchId = :branchId " +
+           "and (a.status in :openStatuses or (a.status = :finishedStatus and a.appointmentDate >= :since))")
+    boolean existsLiveVisit(@Param("patientId") Long patientId, @Param("branchId") String branchId,
+                            @Param("openStatuses") Collection<AppointmentStatus> openStatuses,
+                            @Param("finishedStatus") AppointmentStatus finishedStatus,
+                            @Param("since") LocalDateTime since);
     boolean existsByPatientIdAndStatusIn(Long patientId, Collection<AppointmentStatus> statuses);
     boolean existsByDoctorIdAndAppointmentDateAndStatusNotIn(Long doctorId, LocalDateTime date, Collection<AppointmentStatus> statuses);
 
