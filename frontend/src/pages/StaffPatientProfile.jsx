@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import axios, { errorMessage, classifyError } from '../api';
+import axios, { errorMessage, classifyError, branchForCreate } from '../api';
 import StaffLayout from '../layouts/StaffLayout';
 import InvoicePreviewModal from '../components/billing/InvoicePreviewModal';
+import NewAppointmentModal from '../components/modals/NewAppointmentModal';
 import { fmtDate, fmtDateTime, money, STATUS_BADGE } from '../utils/format';
 
 /**
@@ -19,6 +20,7 @@ export default function StaffPatientProfile() {
   const [history, setHistory] = useState(null);
   const [state, setState] = useState({ loading: true, kind: null, message: '' });
   const [printId, setPrintId] = useState(null);
+  const [bookingOpen, setBookingOpen] = useState(false);
   const isAdmin = localStorage.getItem('role') === 'ADMIN';
 
   const load = useCallback(async () => {
@@ -75,6 +77,12 @@ export default function StaffPatientProfile() {
   const myBranch = localStorage.getItem('branchId');
   // The server decides this (accessLevel) and leaves sensitive fields out of the response; the UI only reflects it.
   const limited = profile.accessLevel === 'TEMPORARY_VISIT' || profile.accessLevel === 'HISTORICAL';
+  const role = localStorage.getItem('role');
+  // Offer "Book visit" only where the server would accept it: a receptionist of a branch the patient is NOT registered at
+  // (admins: when working in one specific other branch). The backend re-checks every booking.
+  const adminBranch = isAdmin ? branchForCreate() : null;
+  const canBookVisit = profile.branchId !== (isAdmin ? adminBranch : myBranch)
+    && ((role === 'RECEPTIONIST' && limited) || (isAdmin && !!adminBranch));
   const movedAway = !isAdmin && !limited && profile.branchId !== myBranch;
   const limitedNote = profile.accessLevel === 'TEMPORARY_VISIT'
     ? <>This patient is registered at <b>{profile.branchName || profile.branchId}</b> and is visiting your branch. You can see identification and <b>your branch’s</b> visits only; medical history, address, emergency contact and other branches’ records are not shared.</>
@@ -93,7 +101,8 @@ export default function StaffPatientProfile() {
               <p className="text-sm text-slate-500">{profile.regId} • {profile.branchName || profile.branchId}</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            {canBookVisit && <button onClick={() => setBookingOpen(true)} className="px-4 py-2 rounded-lg text-[12px] font-bold text-white bg-[#2563eb] hover:bg-blue-700">Book visit at this branch</button>}
             {profile.pendingTransfer && <span className="text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100 rounded px-2 py-1">Transfer pending → {profile.pendingTransfer.toBranchName}</span>}
             {limited && <span className="text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100 rounded px-2 py-1">{profile.accessLevel === 'TEMPORARY_VISIT' ? 'Visiting patient · limited view' : 'Limited view'}</span>}
             {movedAway && <span className="text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200 rounded px-2 py-1">Now at {profile.branchName}</span>}
@@ -169,7 +178,7 @@ export default function StaffPatientProfile() {
               <tbody className="divide-y divide-slate-100">
                 {history.appointments.length === 0 && <tr><td colSpan="5" className="px-6 py-6 text-center text-slate-400">No appointments.</td></tr>}
                 {history.appointments.map((a) => (
-                  <tr key={a.id}><td className="px-6 py-3">{fmtDateTime(a.appointmentDate)}</td><td className="px-6 py-3">{a.doctorName}</td><td className="px-6 py-3">{a.caseType}</td><td className="px-6 py-3">{a.branchName || a.branchId}</td><td className="px-6 py-3 font-semibold">{a.status}</td></tr>
+                  <tr key={a.id}><td className="px-6 py-3">{fmtDateTime(a.appointmentDate)}</td><td className="px-6 py-3">{a.doctorName}</td><td className="px-6 py-3">{a.caseType}</td><td className="px-6 py-3">{a.branchName || a.branchId}{a.crossBranch && <span className="ml-2 text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100 rounded px-1.5 py-0.5">Visit away from home</span>}</td><td className="px-6 py-3 font-semibold">{a.status}</td></tr>
                 ))}
               </tbody>
             </table>
@@ -198,6 +207,11 @@ export default function StaffPatientProfile() {
           </div>
         )}
       </div>
+      {canBookVisit && (
+        <NewAppointmentModal isOpen={bookingOpen} onClose={() => setBookingOpen(false)}
+          presetPatient={{ id: profile.id, fullName: profile.fullName, branchName: profile.branchName }}
+          onSuccess={() => { setBookingOpen(false); load(); }} />
+      )}
       {printId && <InvoicePreviewModal billId={printId} onClose={() => setPrintId(null)} />}
     </StaffLayout>
   );

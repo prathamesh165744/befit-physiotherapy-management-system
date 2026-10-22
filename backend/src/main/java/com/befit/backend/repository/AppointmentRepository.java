@@ -55,6 +55,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
                             @Param("finishedStatus") AppointmentStatus finishedStatus,
                             @Param("since") LocalDateTime since);
     boolean existsByPatientIdAndStatusIn(Long patientId, Collection<AppointmentStatus> statuses);
+    /** Is the PATIENT already booked at this exact time, at any branch? (no double-booking across branches) */
+    boolean existsByPatientIdAndAppointmentDateAndStatusNotIn(Long patientId, LocalDateTime date, Collection<AppointmentStatus> statuses);
     boolean existsByDoctorIdAndAppointmentDateAndStatusNotIn(Long doctorId, LocalDateTime date, Collection<AppointmentStatus> statuses);
 
     @Modifying

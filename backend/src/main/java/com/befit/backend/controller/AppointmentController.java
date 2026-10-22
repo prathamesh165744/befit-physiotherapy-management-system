@@ -33,7 +33,10 @@ public class AppointmentController {
         return appointmentService.list(access.current(), branchId, date, statuses, page, size, dir);
     }
 
-    /** Books at the patient's current branch. */
+    /**
+     * Books at the patient's current branch, or - with "branchId" in the body - a cross-branch visit at the caller's own
+     * branch (receptionist) / any branch (admin). The patient's registered branch never changes.
+     */
     @PostMapping
     public AppointmentDTO create(@Valid @RequestBody AppointmentCreateRequest request) {
         return appointmentService.create(access.current(), request);

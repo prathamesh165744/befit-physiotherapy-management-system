@@ -9,6 +9,8 @@ import com.befit.backend.repository.AppointmentRepository;
 import com.befit.backend.repository.UserRepository;
 import com.befit.backend.security.AuthUser;
 import com.befit.backend.security.BranchAccess;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -21,6 +23,7 @@ import java.util.*;
 
 @Service
 public class AppointmentService {
+    private static final Logger log = LoggerFactory.getLogger(AppointmentService.class);
     private static final Set<AppointmentStatus> FREE_SLOT_STATUSES =
             EnumSet.of(AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW, AppointmentStatus.COMPLETED);
 
@@ -83,16 +86,18 @@ public class AppointmentService {
     }
 
     /**
-     * Books an appointment at the patient's CURRENT branch. A patient who has just transferred is therefore
-     * booked at the new branch, while their old appointments stay at the old one.
+     * Books an appointment. Without a branchId in the request it is booked at the patient's CURRENT branch (a patient
+     * who has just transferred is booked at the new branch, old appointments stay at the old one).
+     * With a branchId that differs from the patient's branch it is a CROSS-BRANCH (temporary) visit: the appointment
+     * belongs to the receiving branch, the patient stays registered where they are, and no second profile is created.
      */
     @Transactional
     public AppointmentDTO create(AuthUser user, AppointmentCreateRequest r) {
         Patient patient = patientService.load(r.patientId());
-        String branchId = patient.getBranchId();
-        if (!user.isAdmin() && (branchId == null || !branchId.equals(user.branchId()))) {
-            throw ApiException.forbidden("This patient is registered at another branch. Appointments can only be booked at the patient's own branch.");
-        }
+        String home = patient.getBranchId();
+        String branchId = access.branchForVisit(user, patient, r.branchId());
+        boolean crossBranch = home == null || !home.equals(branchId);
+
         Branch branch = branchService.require(branchId);
         if (!branch.isActive()) throw ApiException.badRequest("That branch is not accepting appointments right now.");
 
@@ -101,16 +106,27 @@ public class AppointmentService {
         catch (RuntimeException e) { throw ApiException.badRequest("Appointment date/time is not valid."); }
         if (when.toLocalDate().isBefore(LocalDate.now())) throw ApiException.badRequest("An appointment cannot be booked in the past.");
 
-        if (r.doctorId() != null) {
+        if (crossBranch) {
+            // A visit away from home needs a real, active doctor of the RECEIVING branch.
+            if (r.doctorId() == null) throw ApiException.badRequest("Please choose a doctor at the visiting branch.");
+            User doc = userRepository.findById(r.doctorId()).orElseThrow(() -> ApiException.badRequest("The selected doctor was not found."));
+            if (doc.getRole() != Role.DOCTOR || !doc.isActive()) throw ApiException.badRequest("The selected person is not an active doctor.");
+            if (!branchId.equals(doc.getBranchId())) throw ApiException.badRequest("That doctor does not work at the visiting branch.");
+        } else if (r.doctorId() != null) {
             userRepository.findById(r.doctorId()).ifPresent(doc -> {
                 if (doc.getRole() != Role.DOCTOR) throw ApiException.badRequest("The selected person is not a doctor.");
                 if (doc.getBranchId() != null && !doc.getBranchId().equals(branchId)) {
                     throw ApiException.badRequest("That doctor works at another branch.");
                 }
             });
-            if (appointmentRepository.existsByDoctorIdAndAppointmentDateAndStatusNotIn(r.doctorId(), when, FREE_SLOT_STATUSES)) {
-                throw ApiException.conflict("SLOT_TAKEN", "That doctor already has an appointment at this time. Please choose another slot.");
-            }
+        }
+        if (r.doctorId() != null
+                && appointmentRepository.existsByDoctorIdAndAppointmentDateAndStatusNotIn(r.doctorId(), when, FREE_SLOT_STATUSES)) {
+            throw ApiException.conflict("SLOT_TAKEN", "That doctor already has an appointment at this time. Please choose another slot.");
+        }
+        // The same person cannot be in two places at once - checked across ALL branches.
+        if (appointmentRepository.existsByPatientIdAndAppointmentDateAndStatusNotIn(patient.getId(), when, FREE_SLOT_STATUSES)) {
+            throw ApiException.conflict("PATIENT_BUSY", "This patient already has an appointment at this time (possibly at another branch).");
         }
 
         Appointment a = new Appointment();
@@ -119,10 +135,15 @@ public class AppointmentService {
         a.setDoctorName(r.doctorName().trim());
         a.setCaseType(r.caseType() == null || r.caseType().isBlank() ? "Consultation" : r.caseType().trim());
         a.setAppointmentDate(when);
-        a.setBranchId(branchId);
+        a.setBranchId(branchId);          // where the visit happens; patient.branchId is NOT touched
         a.setStatus(AppointmentStatus.WAITING);
         a.setCheckInTime(LocalDateTime.now());
-        return AppointmentDTO.of(appointmentRepository.save(a), branch.getName());
+        Appointment saved = appointmentRepository.save(a);
+        if (crossBranch) {
+            log.info("Cross-branch visit booked by {} (branch {}): patient={}, home={}, visitBranch={}, appointment={}",
+                    user.email(), user.branchId(), patient.getId(), home, branchId, saved.getId());
+        }
+        return AppointmentDTO.of(saved, branch.getName());
     }
 
     @Transactional

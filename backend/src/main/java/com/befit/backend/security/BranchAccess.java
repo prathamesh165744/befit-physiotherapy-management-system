@@ -126,6 +126,32 @@ public class BranchAccess {
         }
     }
 
+    /**
+     * The branch where a new appointment for this patient will take place, after checking the caller may book it.
+     *  - no branch requested, or the patient's home branch: a normal booking. ADMIN, or staff of that home branch.
+     *  - any OTHER branch: a cross-branch (temporary) visit. ADMIN, or a RECEPTIONIST booking into THEIR OWN branch.
+     *    Doctors cannot create cross-branch visits, and nobody can book into a branch that is not theirs.
+     * The patient's own branchId is never changed by this.
+     */
+    public String branchForVisit(AuthUser user, Patient patient, String requested) {
+        String home = patient.getBranchId();
+        boolean sameAsHome = requested == null || requested.isBlank() || requested.equals(home);
+        if (sameAsHome) {
+            if (!user.isAdmin() && (home == null || !home.equals(user.branchId()))) {
+                throw ApiException.forbidden("This patient is registered at another branch. Book the visit at your own branch by choosing the visiting-patient option.");
+            }
+            return home;
+        }
+        if (user.isAdmin()) return requested;
+        if (user.role() != Role.RECEPTIONIST) {
+            throw ApiException.forbidden("Only receptionists and administrators can book a visit for a patient of another branch.");
+        }
+        if (!requested.equals(requireOwnBranch(user))) {
+            throw ApiException.forbidden("You can only book visits at your own branch.");
+        }
+        return requested;
+    }
+
     private String requireOwnBranch(AuthUser user) {
         if (user.branchId() == null || user.branchId().isBlank()) {
             throw ApiException.forbidden("Your account is not assigned to a branch. Please contact an administrator.");
