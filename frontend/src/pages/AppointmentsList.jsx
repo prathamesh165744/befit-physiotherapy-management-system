@@ -79,7 +79,7 @@ const AppointmentsList = ({ historyMode = false }) => {
                     <tr key={apt.id} className="hover:bg-[#f8f9fc] transition">
                       <td className="px-6 py-4 font-bold text-[#2563eb]">APT-{apt.id}</td>
                       <td className="px-6 py-4 font-medium">{fmtDateTime(apt.appointmentDate)}</td>
-                      <td className="px-6 py-4 font-bold text-slate-800">{apt.patient?.fullName || 'Walk-in'}</td>
+                      <td className="px-6 py-4 font-bold text-slate-800">{apt.patient?.fullName || 'Walk-in'}{apt.crossBranch && <span title={`Registered at ${apt.patientHomeBranchId}`} className="ml-2 text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100 rounded px-1.5 py-0.5">Visiting · home {apt.patientHomeBranchId}</span>}</td>
                       <td className="px-6 py-4 text-slate-500">{apt.doctorName}</td>
                       <td className="px-6 py-4 font-medium">{apt.caseType}</td>
                       {isAdmin && <td className="px-6 py-4 text-slate-500">{apt.branchName || apt.branchId}</td>}
