@@ -16,6 +16,7 @@ import Billing from './pages/Billing';
 import AppointmentsList from './pages/AppointmentsList';
 import History from './pages/History';
 import TransferRequests from './pages/TransferRequests';
+import OutgoingTransfers from './pages/OutgoingTransfers';
 
 function App() {
   return (
@@ -48,6 +49,7 @@ function App() {
                 <Route path="/appointments" element={<AppointmentsList />} />
                 <Route path="/billing" element={<Billing />} />
                 <Route path="/transfers" element={<TransferRequests />} />
+                <Route path="/transfers/outgoing" element={<OutgoingTransfers />} />
                 <Route path="/history" element={<History />} />
               </Routes>
             </ProtectedRoute>

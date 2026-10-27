@@ -48,6 +48,13 @@ public interface BillRepository extends JpaRepository<Bill, Long> {
     List<Bill> findByPatientIdOrderByBillDateDesc(Long patientId, Pageable pageable);
 
     boolean existsByPatientIdAndBranchId(Long patientId, String branchId);
+
+    /** Transfer validation: invoices of the patient (any branch) that still have money due. */
+    long countByPatientIdAndStatusIn(Long patientId, Collection<BillStatus> statuses);
+
+    @Query("select coalesce(sum(coalesce(b.totalAmount, 0) - coalesce(b.amountPaid, 0)), 0) from Bill b " +
+           "where b.patientId = :patientId and b.status in :statuses")
+    java.math.BigDecimal outstandingBalance(@Param("patientId") Long patientId, @Param("statuses") Collection<BillStatus> statuses);
     boolean existsByAppointmentIdAndStatusNot(Long appointmentId, BillStatus status);
 
     // ---- startup backfill helpers (DataFixer) ----

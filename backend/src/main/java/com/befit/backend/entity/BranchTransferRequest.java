@@ -17,10 +17,13 @@ public class BranchTransferRequest {
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 20) private TransferStatus status = TransferStatus.PENDING;
     @Column(length = 500) private String reason;
     @Column(name = "requested_by") private String requestedBy;
+    @Column(name = "requested_by_role", length = 20) private String requestedByRole;      // PATIENT / RECEPTIONIST / ADMIN
     @Column(name = "requested_at", nullable = false) private LocalDateTime requestedAt = LocalDateTime.now();
     @Column(name = "decided_by") private String decidedBy;
     @Column(name = "decided_at") private LocalDateTime decidedAt;
     @Column(name = "decision_note", length = 500) private String decisionNote;
+    /** Validation warnings the approver acknowledged when approving (open future visits, unpaid invoices...). Audit trail. */
+    @Column(name = "decision_warnings", length = 1000) private String decisionWarnings;
 
     public Long getId() { return id; }
     public Long getPatientId() { return patientId; } public void setPatientId(Long v) { this.patientId = v; }
@@ -29,6 +32,8 @@ public class BranchTransferRequest {
     public TransferStatus getStatus() { return status; } public void setStatus(TransferStatus v) { this.status = v; }
     public String getReason() { return reason; } public void setReason(String v) { this.reason = v; }
     public String getRequestedBy() { return requestedBy; } public void setRequestedBy(String v) { this.requestedBy = v; }
+    public String getRequestedByRole() { return requestedByRole; } public void setRequestedByRole(String v) { this.requestedByRole = v; }
+    public String getDecisionWarnings() { return decisionWarnings; } public void setDecisionWarnings(String v) { this.decisionWarnings = v; }
     public LocalDateTime getRequestedAt() { return requestedAt; } public void setRequestedAt(LocalDateTime v) { this.requestedAt = v; }
     public String getDecidedBy() { return decidedBy; } public void setDecidedBy(String v) { this.decidedBy = v; }
     public LocalDateTime getDecidedAt() { return decidedAt; } public void setDecidedAt(LocalDateTime v) { this.decidedAt = v; }
