@@ -169,16 +169,37 @@ public class TransferService {
         Map<Long, String> names = patientRepository.findAllById(rows.stream().map(BranchTransferRequest::getPatientId).distinct().toList())
                 .stream().collect(Collectors.toMap(Patient::getId, pt -> pt.getFullName() == null ? "" : pt.getFullName()));
         Map<String, String> branches = branchService.nameMap();
-        return rows.stream().map(t -> toDto(t, names.get(t.getPatientId()), branches)).toList();
+        // Outgoing = tracking view for the source branch: never the destination approver's internal review details.
+        return rows.stream().map(t -> {
+            TransferDTO dto = toDto(t, names.get(t.getPatientId()), branches);
+            return outgoing ? dto.forSourceBranch() : dto;
+        }).toList();
     }
 
-    /** The rule check the approver sees. Visible to staff of the source or destination branch, and admins. */
+    /** Request counts per status (all four always present) for the branches the caller may see. direction as in listForStaff. */
+    @Transactional(readOnly = true)
+    public Map<String, Long> summaryForStaff(AuthUser user, String branch, String direction) {
+        requireStaffRole(user);
+        List<String> ids = access.visibleBranchIds(user, branch);
+        List<Object[]> rows = "OUTGOING".equalsIgnoreCase(direction)
+                ? transferRepository.countOutgoingByStatus(ids) : transferRepository.countIncomingByStatus(ids);
+        Map<String, Long> out = new java.util.LinkedHashMap<>();
+        for (TransferStatus s : TransferStatus.values()) out.put(s.name(), 0L);
+        for (Object[] r : rows) out.put(((TransferStatus) r[0]).name(), ((Number) r[1]).longValue());
+        return out;
+    }
+
+    /**
+     * The rule check the approver sees (open visits, invoices due). It is part of the destination branch's approval work,
+     * so only staff of the DESTINATION branch and admins may open it - the source branch tracks the request through the
+     * outgoing list (status, approver, decision) instead.
+     */
     @Transactional(readOnly = true)
     public TransferValidationDTO validationFor(AuthUser user, Long id) {
         requireStaffRole(user);
         BranchTransferRequest t = transferRepository.findById(id).orElseThrow(() -> ApiException.notFound("Transfer request not found."));
-        if (!user.isAdmin() && !t.getToBranchId().equals(user.branchId()) && !t.getFromBranchId().equals(user.branchId())) {
-            throw ApiException.forbidden("You do not have access to this transfer request.");
+        if (!user.isAdmin() && !t.getToBranchId().equals(user.branchId())) {
+            throw ApiException.forbidden("Only the destination branch can review this transfer request.");
         }
         Patient p = patientRepository.findById(t.getPatientId()).orElseThrow(() -> ApiException.notFound("Patient not found."));
         return validate(p, t.getFromBranchId(), t.getToBranchId(), t.getId(), t.getStatus().name());

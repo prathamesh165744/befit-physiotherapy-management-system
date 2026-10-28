@@ -407,11 +407,12 @@ class TransferServiceTest {
         assertEquals("Asha", stripped.patientName());
     }
 
-    @Test void billingDetailsAreOnlyForStaffOfTheTransferAndAdmins() {
+    @Test void billingDetailsAreOnlyForTheDestinationBranchAndAdmins() {
         pending("a@A.test");
         due(bill(1, "A", "500.00", "0.00", BillStatus.UNPAID));
         assertEquals(1, service.validationFor(staff(Role.RECEPTIONIST, "B"), 5L).dueInvoices().size());
-        assertEquals(1, service.validationFor(staff(Role.RECEPTIONIST, "A"), 5L).dueInvoices().size());
+        // the SOURCE branch tracks the request through the outgoing list, it does not get the approval review
+        assertEquals(403, assertThrows(ApiException.class, () -> service.validationFor(staff(Role.RECEPTIONIST, "A"), 5L)).getStatus());
         assertEquals(1, service.validationFor(staff(Role.ADMIN, null), 5L).dueInvoices().size());
         assertEquals(403, assertThrows(ApiException.class, () -> service.validationFor(staff(Role.RECEPTIONIST, "C"), 5L)).getStatus());
         assertEquals(403, assertThrows(ApiException.class, () -> service.validationFor(staff(Role.DOCTOR, "B"), 5L)).getStatus());

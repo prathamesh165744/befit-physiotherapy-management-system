@@ -21,4 +21,13 @@ public record TransferDTO(Long id, Long patientId, String patientName, String fr
         return new TransferDTO(id, patientId, patientName, fromBranchId, fromBranchName, toBranchId, toBranchName, status, reason,
                 requestedBy, requestedAt, decidedBy, decidedAt, decisionNote, requestedByRole, null, null, null, null);
     }
+
+    /**
+     * The outgoing-tracking view for the SOURCE branch: who asked, where to, why, when, the status, who decided, when and
+     * their note. What the destination's approver reviewed internally (acknowledged warnings, the invoice snapshot) is left out.
+     */
+    public TransferDTO forSourceBranch() {
+        return new TransferDTO(id, patientId, patientName, fromBranchId, fromBranchName, toBranchId, toBranchName, status, reason,
+                requestedBy, requestedAt, decidedBy, decidedAt, decisionNote, requestedByRole, null, null, null, null);
+    }
 }
