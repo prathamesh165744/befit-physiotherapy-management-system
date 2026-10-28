@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,7 +46,7 @@ class TransferServiceTest {
         bills = mock(BillRepository.class);
         branchService = mock(BranchService.class);
         BranchAccess access = new BranchAccess(mock(BranchRepository.class), appointments, bills, history, 3);
-        service = new TransferService(patients, history, transfers, appointments, bills, branchService, access, true, blockOnInvoices, allowSelfApproval);
+        service = new TransferService(patients, history, transfers, appointments, bills, branchService, access, true, blockOnInvoices, allowSelfApproval, false);
 
         patient = new Patient();
         patient.setId(7L); patient.setFullName("Asha Kulkarni"); patient.setBranchId("A");
@@ -55,11 +56,21 @@ class TransferServiceTest {
         when(branchService.require("B")).thenReturn(new Branch("B", "Branch B"));
         when(branchService.nameMap()).thenReturn(Map.of("A", "Branch A", "B", "Branch B", "C", "Branch C"));
         when(transfers.save(any(BranchTransferRequest.class))).thenAnswer(i -> i.getArgument(0));
-        when(bills.outstandingBalance(eq(7L), anyCollection())).thenReturn(BigDecimal.ZERO);
     }
 
     private static AuthUser staff(Role role, String branch, String email) { return new AuthUser(1L, email, "S", role, branch); }
     private static AuthUser staff(Role role, String branch) { return staff(role, branch, role.name().toLowerCase() + "@" + branch + ".test"); }
+
+    private static Bill bill(long id, String branch, String total, String paid, BillStatus status) {
+        Bill b = new Bill();
+        b.setId(id); b.setInvoiceNumber("INV-" + id); b.setPatientId(7L); b.setBranchId(branch);
+        b.setBillDate(LocalDateTime.now().minusDays(id)); b.setStatus(status);
+        b.setTotalAmount(new BigDecimal(total)); b.setAmountPaid(new BigDecimal(paid));
+        return b;
+    }
+    private void due(Bill... list) {
+        when(bills.findByPatientIdAndStatusInOrderByBillDateAsc(eq(7L), anyCollection())).thenReturn(List.of(list));
+    }
 
     private BranchTransferRequest pending(String requestedBy) {
         BranchTransferRequest t = new BranchTransferRequest();
@@ -131,22 +142,21 @@ class TransferServiceTest {
     @Test void futureAppointmentsAndOutstandingInvoicesAreWarnings() {
         pending("a@A.test");
         when(appointments.countByPatientIdAndStatusInAndAppointmentDateGreaterThanEqual(eq(7L), anyCollection(), any())).thenReturn(2L);
-        when(bills.countByPatientIdAndStatusIn(eq(7L), anyCollection())).thenReturn(1L);
-        when(bills.outstandingBalance(eq(7L), anyCollection())).thenReturn(new BigDecimal("1250"));
+        due(bill(1, "A", "2000.00", "750.00", BillStatus.PARTIAL));
         TransferValidationDTO v = service.validationFor(staff(Role.RECEPTIONIST, "B"), 5L);
         assertTrue(v.canApprove());
         assertTrue(v.requiresAcknowledgement());
         assertEquals(List.of("FUTURE_APPOINTMENT", "OUTSTANDING_INVOICES"), v.warnings().stream().map(i -> i.code()).toList());
-        assertEquals(new BigDecimal("1250"), v.outstandingAmount());
+        assertEquals(new BigDecimal("1250.00"), v.outstandingAmount());
     }
 
     @Test void outstandingInvoicesBlockWhenTheClinicRuleSaysSo() {
         build(true, false);
         pending("a@A.test");
-        when(bills.countByPatientIdAndStatusIn(eq(7L), anyCollection())).thenReturn(1L);
-        when(bills.outstandingBalance(eq(7L), anyCollection())).thenReturn(new BigDecimal("300"));
+        due(bill(1, "A", "500.00", "200.00", BillStatus.PARTIAL));
         TransferValidationDTO v = service.validationFor(staff(Role.RECEPTIONIST, "B"), 5L);
         assertFalse(v.canApprove());
+        assertEquals("BLOCK", v.outstandingRule());
         assertEquals("OUTSTANDING_INVOICES", v.blockers().get(0).code());
     }
 
@@ -276,6 +286,157 @@ class TransferServiceTest {
         assertEquals("TRANSFER_BLOCKED", assertThrows(ApiException.class,
                 () -> service.adminTransfer(staff(Role.ADMIN, null), 7L, new TransferRequestBody("B", "x", true))).getCode());
         assertEquals("A", patient.getBranchId());
+    }
+
+    // ----------------------------------------------------------------- billing validation (BEFIT-28)
+    @Test void approverSeesEachDueInvoiceWithBranchTotalPaidAndBalance() {
+        pending("a@A.test");
+        due(bill(1, "A", "2000.00", "750.00", BillStatus.PARTIAL), bill(2, "C", "300.50", "0.00", BillStatus.UNPAID));
+        TransferValidationDTO v = service.validationFor(staff(Role.RECEPTIONIST, "B"), 5L);
+
+        assertEquals(2, v.outstandingInvoices());
+        assertEquals(new BigDecimal("1550.50"), v.outstandingAmount());          // 1250.00 + 300.50
+        assertEquals("WARN_AND_DOCUMENT", v.outstandingRule());
+        var first = v.dueInvoices().get(0);
+        assertEquals("INV-1", first.invoiceNumber());
+        assertEquals("A", first.branchId());
+        assertEquals("Branch A", first.branchName());
+        assertEquals("PARTIAL", first.status());
+        assertEquals(new BigDecimal("2000.00"), first.totalAmount());
+        assertEquals(new BigDecimal("750.00"), first.amountPaid());
+        assertEquals(new BigDecimal("1250.00"), first.balanceDue());
+        assertEquals("C", v.dueInvoices().get(1).branchId());                      // invoices of ANY branch are covered
+        assertEquals(0, v.dueInvoicesNotShown());
+    }
+
+    @Test void fullyPaidOrZeroBalanceInvoicesAreNotCounted() {
+        pending("a@A.test");
+        due(bill(1, "A", "400.00", "400.00", BillStatus.PARTIAL));   // status says partial but nothing is due
+        TransferValidationDTO v = service.validationFor(staff(Role.RECEPTIONIST, "B"), 5L);
+        assertEquals(0, v.outstandingInvoices());
+        assertEquals(BigDecimal.ZERO, v.outstandingAmount());
+        assertTrue(v.warnings().isEmpty());
+        // only unpaid / partly paid invoices are ever asked for: PAID and CANCELLED never reach the calculation
+        verify(bills).findByPatientIdAndStatusInOrderByBillDateAsc(eq(7L), eq(java.util.EnumSet.of(BillStatus.UNPAID, BillStatus.PARTIAL)));
+    }
+
+    @Test void overpaidInvoiceNeverGivesANegativeBalance() {
+        pending("a@A.test");
+        due(bill(1, "A", "100.00", "150.00", BillStatus.PARTIAL));
+        assertEquals(0, service.validationFor(staff(Role.RECEPTIONIST, "B"), 5L).outstandingInvoices());
+    }
+
+    @Test void invoiceListIsCappedButTotalsCoverEverything() {
+        pending("a@A.test");
+        Bill[] many = new Bill[53];
+        for (int i = 0; i < many.length; i++) many[i] = bill(i + 1, "A", "10.00", "0.00", BillStatus.UNPAID);
+        due(many);
+        TransferValidationDTO v = service.validationFor(staff(Role.RECEPTIONIST, "B"), 5L);
+        assertEquals(53, v.outstandingInvoices());
+        assertEquals(new BigDecimal("530.00"), v.outstandingAmount());
+        assertEquals(50, v.dueInvoices().size());
+        assertEquals(3, v.dueInvoicesNotShown());
+    }
+
+    @Test void blockRuleRefusesApprovalWhileMoneyIsDue() {
+        build(true, false);
+        pending("a@A.test");
+        due(bill(1, "A", "500.00", "0.00", BillStatus.UNPAID));
+        ApiException e = assertThrows(ApiException.class, () -> service.approve(staff(Role.ADMIN, null), 5L, "go", true));
+        assertEquals("TRANSFER_BLOCKED", e.getCode());
+        assertEquals("A", patient.getBranchId());
+        verify(history, never()).save(any());
+    }
+
+    @Test void warnRuleNeedsAcknowledgementAndNoteThenStoresADocumentedFinancialRecord() {
+        BranchTransferRequest t = pending("a@A.test");
+        due(bill(1, "A", "2000.00", "750.00", BillStatus.PARTIAL), bill(2, "C", "300.50", "0.00", BillStatus.UNPAID));
+        var r = staff(Role.RECEPTIONIST, "B", "r@B.test");
+        assertEquals("ACKNOWLEDGEMENT_REQUIRED", assertThrows(ApiException.class, () -> service.approve(r, 5L, "ok", false)).getCode());
+        assertEquals(400, assertThrows(ApiException.class, () -> service.approve(r, 5L, "", true)).getStatus());
+        assertEquals("A", patient.getBranchId());
+        assertNull(t.getOutstandingAmount());
+
+        TransferDTO dto = service.approve(r, 5L, "Patient promised to pay at Branch A", true);
+        assertEquals("B", patient.getBranchId());
+        assertEquals(new BigDecimal("1550.50"), t.getOutstandingAmount());
+        assertEquals(2, t.getOutstandingInvoices());
+        assertEquals("INV-1@A, INV-2@C", t.getOutstandingInvoiceRefs());
+        assertTrue(t.getDecisionWarnings().contains("unpaid or partly paid"));
+        assertEquals("r@B.test", t.getDecidedBy());
+        assertNotNull(t.getDecidedAt());
+        assertEquals(new BigDecimal("1550.50"), dto.outstandingAmount());          // staff see the record
+    }
+
+    @Test void cleanApprovalStoresNoFinancialSnapshot() {
+        BranchTransferRequest t = pending("a@A.test");
+        service.approve(staff(Role.RECEPTIONIST, "B"), 5L, null, false);
+        assertNull(t.getOutstandingAmount());
+        assertNull(t.getOutstandingInvoices());
+    }
+
+    @Test void approvalNeverTouchesInvoicesOrPayments() {
+        pending("a@A.test");
+        Bill b = bill(1, "A", "2000.00", "750.00", BillStatus.PARTIAL);
+        due(b);
+        service.approve(staff(Role.RECEPTIONIST, "B"), 5L, "accepted", true);
+        assertEquals("A", b.getBranchId(), "the invoice stays with its original branch");
+        assertEquals(new BigDecimal("750.00"), b.getAmountPaid());
+        assertEquals(BillStatus.PARTIAL, b.getStatus());
+        verify(bills, never()).save(any());
+        verify(bills, never()).saveAll(any());
+    }
+
+    @Test void adminDirectTransferWithMoneyDueIsDocumentedToo() {
+        due(bill(1, "A", "500.00", "100.00", BillStatus.PARTIAL));
+        assertEquals("ACKNOWLEDGEMENT_REQUIRED", assertThrows(ApiException.class,
+                () -> service.adminTransfer(staff(Role.ADMIN, null), 7L, new TransferRequestBody("B", "Relocation", false))).getCode());
+        TransferDTO dto = service.adminTransfer(staff(Role.ADMIN, null), 7L, new TransferRequestBody("B", "Relocation", true));
+        assertEquals(new BigDecimal("400.00"), dto.outstandingAmount());
+        assertEquals("INV-1@A", dto.outstandingInvoiceRefs());
+    }
+
+    @Test void patientsNeverReceiveTheFinancialSnapshot() {
+        BranchTransferRequest t = new BranchTransferRequest();
+        t.setPatientId(7L); t.setFromBranchId("A"); t.setToBranchId("B");
+        t.setOutstandingAmount(new BigDecimal("400.00")); t.setOutstandingInvoices(1); t.setOutstandingInvoiceRefs("INV-1@A");
+        TransferDTO stripped = TransferDTO.of(t, "Asha", "Branch A", "Branch B").withoutFinancials();
+        assertNull(stripped.outstandingAmount());
+        assertNull(stripped.outstandingInvoices());
+        assertNull(stripped.outstandingInvoiceRefs());
+        assertEquals("Asha", stripped.patientName());
+    }
+
+    @Test void billingDetailsAreOnlyForStaffOfTheTransferAndAdmins() {
+        pending("a@A.test");
+        due(bill(1, "A", "500.00", "0.00", BillStatus.UNPAID));
+        assertEquals(1, service.validationFor(staff(Role.RECEPTIONIST, "B"), 5L).dueInvoices().size());
+        assertEquals(1, service.validationFor(staff(Role.RECEPTIONIST, "A"), 5L).dueInvoices().size());
+        assertEquals(1, service.validationFor(staff(Role.ADMIN, null), 5L).dueInvoices().size());
+        assertEquals(403, assertThrows(ApiException.class, () -> service.validationFor(staff(Role.RECEPTIONIST, "C"), 5L)).getStatus());
+        assertEquals(403, assertThrows(ApiException.class, () -> service.validationFor(staff(Role.DOCTOR, "B"), 5L)).getStatus());
+        assertEquals(403, assertThrows(ApiException.class, () -> service.validationFor(staff(Role.PATIENT, "B"), 5L)).getStatus());
+    }
+
+    @Test void autoApplyOfAPatientRequestNeverHappensWhenMoneyIsDue() {
+        // approval switched off, but there is an unpaid invoice -> must wait for a person
+        service = new TransferService(patients, history, transfers, appointments, bills, branchService,
+                new BranchAccess(mock(BranchRepository.class), appointments, bills, history, 3), false, false, false, false);
+        Patient owner = patient;
+        owner.setUser(new User());
+        when(patients.findByUserEmail("pat@x.test")).thenReturn(Optional.of(owner));
+        due(bill(1, "A", "500.00", "0.00", BillStatus.UNPAID));
+        TransferDTO dto = service.requestTransfer(new AuthUser(9L, "pat@x.test", "P", Role.PATIENT, "A"), new TransferRequestBody("B", "Moving", null));
+        assertEquals("PENDING", dto.status());
+        assertEquals("A", owner.getBranchId());
+        assertNull(dto.outstandingAmount());
+
+        // nothing due -> the old "apply at once" behaviour still works
+        due();
+        owner.setBranchId("A");
+        when(transfers.findFirstByPatientIdAndStatus(7L, TransferStatus.PENDING)).thenReturn(Optional.empty());
+        assertEquals("APPROVED", service.requestTransfer(new AuthUser(9L, "pat@x.test", "P", Role.PATIENT, "A"), new TransferRequestBody("B", "Moving", null)).status());
+        assertEquals("B", owner.getBranchId());
     }
 
     // ----------------------------------------------------------------- lists

@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Locale;
 
 @Service
 public class UserService {
@@ -99,5 +100,31 @@ public class UserService {
             branchId = patientRepository.findByUserEmail(user.getEmail()).map(Patient::getBranchId).orElse(null);
         }
         return new AuthResponse(token, user.getRole(), user.getFullName(), branchId);
+    }
+
+    /**
+     * Creates a branch manager: a staff login that is tied to ONE active branch and can only decide branch-transfer
+     * requests for it. A manager never gets the null branch that means "all branches" for admins.
+     */
+    @Transactional
+    public User createBranchManager(String fullName, String email, String phone, String password, String branchId) {
+        if (branchId == null || branchId.isBlank()) throw ApiException.badRequest("A branch manager must be assigned to a branch.");
+        var branch = branchRepository.findById(branchId.trim())
+                .orElseThrow(() -> ApiException.badRequest("Unknown branch: " + branchId));
+        if (!branch.isActive()) throw ApiException.badRequest("That branch is not active.");
+        String normalised = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+        if (normalised.isEmpty()) throw ApiException.badRequest("Email is required.");
+        if (userRepository.findByEmail(normalised).isPresent()) {
+            throw ApiException.conflict("EMAIL_EXISTS", "An account with this email already exists.");
+        }
+        User u = new User();
+        u.setFullName(fullName == null ? null : fullName.trim());
+        u.setEmail(normalised);
+        u.setPhone(phone);
+        u.setPassword(passwordEncoder.encode(password));
+        u.setRole(Role.BRANCH_MANAGER);
+        u.setBranchId(branch.getId());
+        u.setActive(true);
+        return userRepository.save(u);
     }
 }

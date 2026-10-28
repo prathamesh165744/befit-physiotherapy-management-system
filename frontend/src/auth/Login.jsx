@@ -25,6 +25,8 @@ export default function Login() {
 
       if (res.data.role === 'PATIENT') {
         navigate('/dashboard');
+      } else if (res.data.role === 'BRANCH_MANAGER') {
+        navigate('/staff-dashboard/transfers');
       } else {
         navigate('/staff-dashboard');
       }

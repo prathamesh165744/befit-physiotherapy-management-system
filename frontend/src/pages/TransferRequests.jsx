@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios, { errorMessage } from '../api';
 import StaffLayout from '../layouts/StaffLayout';
 import TransferTabs, { STATUS_BADGE } from '../components/transfers/TransferTabs';
-import { fmtDateTime, money } from '../utils/format';
+import { fmtDate, fmtDateTime, money } from '../utils/format';
 
 /**
  * Incoming branch-transfer requests for THIS branch.
@@ -17,6 +17,8 @@ export default function TransferRequests() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busyId, setBusyId] = useState(null);
+  // What this user may do comes from the server (role + clinic rule). The server re-checks every action anyway.
+  const [perm, setPerm] = useState({ canDecide: false, managerApprovalRequired: true });
 
   const [review, setReview] = useState(null);       // { transfer, validation }
   const [reviewError, setReviewError] = useState('');
@@ -34,6 +36,7 @@ export default function TransferRequests() {
   }, [status]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { axios.get('/api/transfers/permissions').then((r) => setPerm(r.data)).catch(() => setPerm({ canDecide: false, managerApprovalRequired: true })); }, []);
 
   const openReview = async (t) => {
     setBusyId(t.id); setError(''); setNotice('');
@@ -88,6 +91,7 @@ export default function TransferRequests() {
           </select>
         </div>
         <TransferTabs active="incoming" />
+        {!perm.canDecide && <div className="mb-3 bg-blue-50 border border-blue-100 text-blue-800 text-sm rounded-lg p-3">{perm.managerApprovalRequired ? 'Transfers into this branch are approved or rejected by the branch manager or an administrator.' : 'You can view transfer requests here.'}</div>}
         {error && <div className="mb-3 bg-red-50 border border-red-100 text-red-700 text-sm rounded-lg p-3">{error}</div>}
         {notice && <div className="mb-3 bg-green-50 border border-green-100 text-green-800 text-sm rounded-lg p-3">{notice}</div>}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -108,10 +112,12 @@ export default function TransferRequests() {
                       {t.decidedBy ? <><div className="text-[12px]">{t.decidedBy}</div><div className="text-[11px] text-slate-400">{fmtDateTime(t.decidedAt)}</div></> : '—'}
                       {t.decisionNote && <div className="text-[11px] text-slate-500">Note: {t.decisionNote}</div>}
                       {t.decisionWarnings && <div className="text-[11px] text-amber-700">Acknowledged: {t.decisionWarnings}</div>}
+                      {t.outstandingInvoices > 0 && <div className="text-[11px] text-amber-700">Due at approval: {money(t.outstandingAmount)} on {t.outstandingInvoices} invoice(s){t.outstandingInvoiceRefs ? ` (${t.outstandingInvoiceRefs})` : ''}</div>}
                     </td>
                     <td className="px-6 py-4"><span className={`text-[9px] font-bold px-2 py-1 rounded border uppercase ${STATUS_BADGE[t.status]}`}>{t.status}</span></td>
                     <td className="px-6 py-4 text-right whitespace-nowrap space-x-3">
-                      {t.status === 'PENDING' && (<>
+                      {t.status === 'PENDING' && !perm.canDecide && <span className="text-[11px] text-slate-400">Awaiting manager</span>}
+                      {t.status === 'PENDING' && perm.canDecide && (<>
                         <button disabled={busyId === t.id} onClick={() => openReview(t)} className="text-green-600 hover:text-green-800 font-bold disabled:opacity-50">Review &amp; approve</button>
                         <button disabled={busyId === t.id} onClick={() => reject(t)} className="text-red-600 hover:text-red-800 font-bold disabled:opacity-50">Reject</button>
                       </>)}
@@ -149,8 +155,34 @@ export default function TransferRequests() {
                   <ul className="list-disc pl-5 space-y-1">{v.warnings.map((w) => <li key={w.code}>{w.message}</li>)}</ul>
                 </div>
               )}
+              {v.dueInvoices && v.dueInvoices.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Unpaid &amp; partly paid invoices · {v.outstandingRule === 'BLOCK' ? 'must be settled before a transfer' : 'stay with the issuing branch'}</div>
+                  <div className="border border-slate-100 rounded-lg overflow-x-auto">
+                    <table className="w-full text-left text-[12px] text-slate-600">
+                      <thead className="bg-[#f8f9fc] text-[10px] uppercase font-bold text-slate-400">
+                        <tr><th className="px-3 py-2">Invoice</th><th className="px-3 py-2">Branch</th><th className="px-3 py-2 text-right">Total</th><th className="px-3 py-2 text-right">Paid</th><th className="px-3 py-2 text-right">Due</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {v.dueInvoices.map((d) => (
+                          <tr key={d.id}>
+                            <td className="px-3 py-2">{d.invoiceNumber}<div className="text-[10px] text-slate-400">{fmtDate(d.billDate)} · {d.status}</div></td>
+                            <td className="px-3 py-2">{d.branchName || d.branchId}</td>
+                            <td className="px-3 py-2 text-right">{money(d.totalAmount)}</td>
+                            <td className="px-3 py-2 text-right">{money(d.amountPaid)}</td>
+                            <td className="px-3 py-2 text-right font-bold text-slate-800">{money(d.balanceDue)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-50 font-bold text-slate-800"><td className="px-3 py-2" colSpan="4">Total due{v.dueInvoicesNotShown > 0 ? ` (incl. ${v.dueInvoicesNotShown} more not listed)` : ''}</td><td className="px-3 py-2 text-right">{money(v.outstandingAmount)}</td></tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
               {v.blockers.length === 0 && v.warnings.length === 0 && <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-sm text-green-800">No open visits or unpaid invoices. Ready to approve.</div>}
-              <p className="text-[12px] text-slate-500">Past visits, invoices and payments stay with the branch that created them. Only the patient’s current branch changes.</p>
+              <p className="text-[12px] text-slate-500">Past visits, invoices and payments stay with the branch that created them, and that branch remains responsible for collecting what is due. Only the patient’s current branch changes.</p>
               {v.requiresAcknowledgement && v.canApprove && (
                 <label className="flex items-start gap-2 text-sm text-slate-700">
                   <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-1" />

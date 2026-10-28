@@ -21,6 +21,7 @@ export default function OutgoingTransfers() {
   const [branches, setBranches] = useState([]);
   const [form, setForm] = useState({ patientId: '', toBranchId: '', reason: '' });
   const [submitting, setSubmitting] = useState(false);
+  const isManager = localStorage.getItem('role') === 'BRANCH_MANAGER';   // managers decide requests; receptionists raise them
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -35,7 +36,7 @@ export default function OutgoingTransfers() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    axios.get('/api/patients/options').then((r) => setPatients(r.data)).catch(() => {});
+    if (!isManager) axios.get('/api/patients/options').then((r) => setPatients(r.data)).catch(() => {});
     axios.get('/api/branches').then((r) => setBranches(r.data)).catch(() => {});
   }, []);
 
@@ -91,7 +92,7 @@ export default function OutgoingTransfers() {
         {error && <div className="mb-3 bg-red-50 border border-red-100 text-red-700 text-sm rounded-lg p-3">{error}</div>}
         {notice && <div className="mb-3 bg-green-50 border border-green-100 text-green-800 text-sm rounded-lg p-3">{notice}</div>}
 
-        <form onSubmit={submit} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
+        {!isManager && <form onSubmit={submit} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
           <h2 className="text-sm font-bold text-slate-800 mb-4">New transfer request</h2>
           <div className="grid md:grid-cols-3 gap-5">
             <div>
@@ -116,7 +117,7 @@ export default function OutgoingTransfers() {
           <div className="mt-4 flex justify-end">
             <button type="submit" disabled={submitting} className="bg-[#2563eb] hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-[13px] font-bold shadow-sm disabled:opacity-50">{submitting ? 'Sending…' : 'Send request'}</button>
           </div>
-        </form>
+        </form>}
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <table className="w-full text-left text-[13px] text-slate-600">

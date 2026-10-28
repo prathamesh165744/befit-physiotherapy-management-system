@@ -25,6 +25,8 @@ import java.util.Set;
  *
  *  - RECEPTIONIST / DOCTOR : exactly their own branch (the ?branchId= the frontend sends is ignored)
  *  - ADMIN                 : any branch, or all of them (?branchId=ALL or no value)
+ *  - BRANCH_MANAGER        : like the other staff - ONLY their own branch; no ADMIN-style wildcard, and no patient /
+ *                            billing / appointment access at all (see SecurityConfig), only branch-transfer decisions.
  *
  * Patient-profile access (see {@link #patientAccess}) has four levels, strongest first:
  *  - FULL            : ADMIN, or staff of the patient's CURRENT (home) branch. Full profile.
@@ -124,6 +126,24 @@ public class BranchAccess {
         if (recordBranchId == null || !recordBranchId.equals(user.branchId())) {
             throw ApiException.forbidden("You do not have access to records of another branch.");
         }
+    }
+
+    /**
+     * May this user APPROVE or REJECT branch-transfer requests (before the branch check - the caller must still belong to
+     * the receiving branch unless admin)? ADMIN always; BRANCH_MANAGER always (only for their own branch);
+     * RECEPTIONIST only while the clinic does not require manager approval; doctors and patients never.
+     */
+    public static boolean mayDecideTransfers(AuthUser user, boolean managerApprovalRequired) {
+        return switch (user.role()) {
+            case ADMIN, BRANCH_MANAGER -> true;
+            case RECEPTIONIST -> !managerApprovalRequired;
+            default -> false;
+        };
+    }
+
+    /** Roles that may use the transfer screens at all (raise, view, withdraw). */
+    public static boolean mayUseTransfers(AuthUser user) {
+        return user.role() == Role.ADMIN || user.role() == Role.BRANCH_MANAGER || user.role() == Role.RECEPTIONIST;
     }
 
     /**

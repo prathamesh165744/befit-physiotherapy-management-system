@@ -3,6 +3,7 @@ package com.befit.backend.controller;
 import com.befit.backend.dto.DecisionBody;
 import com.befit.backend.dto.StaffTransferRequest;
 import com.befit.backend.dto.TransferDTO;
+import com.befit.backend.dto.TransferPermissionsDTO;
 import com.befit.backend.dto.TransferValidationDTO;
 import com.befit.backend.security.BranchAccess;
 import com.befit.backend.service.TransferService;
@@ -12,8 +13,9 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * Staff side of branch transfers (ADMIN / RECEPTIONIST only - see SecurityConfig, and re-checked in TransferService).
- * The RECEIVING branch's receptionist (or an admin) decides; the source or receiving branch can raise or cancel.
+ * Staff side of branch transfers (ADMIN / BRANCH_MANAGER / RECEPTIONIST - see SecurityConfig, and re-checked in TransferService).
+ * The RECEIVING branch's manager (or an admin) decides; receptionists raise and withdraw but cannot approve or reject while
+ * befit.transfer.manager-approval-required=true. Managers are limited to their own branch.
  */
 @RestController
 @RequestMapping("/api/transfers")
@@ -24,6 +26,12 @@ public class TransferController {
     public TransferController(TransferService transferService, BranchAccess access) {
         this.transferService = transferService;
         this.access = access;
+    }
+
+    /** What the caller may do - drives which buttons the screens show. */
+    @GetMapping("/permissions")
+    public TransferPermissionsDTO permissions() {
+        return transferService.permissionsFor(access.current());
     }
 
     /** ?status=PENDING (default) | APPROVED | REJECTED | CANCELLED | ALL   &direction=INCOMING (default) | OUTGOING */

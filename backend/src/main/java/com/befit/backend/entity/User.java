@@ -3,9 +3,9 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 /**
- * Login identity for everyone (ADMIN / DOCTOR / RECEPTIONIST / PATIENT).
+ * Login identity for everyone (ADMIN / BRANCH_MANAGER / DOCTOR / RECEPTIONIST / PATIENT).
  * Patient health + profile data does NOT live here any more - see Patient.
- * For staff, branchId is their working branch (null = admin, sees all branches).
+ * For staff, branchId is their working branch (null = admin, sees all branches). A BRANCH_MANAGER must have one and never sees more.
  */
 @Entity
 @Table(name = "users", indexes = { @Index(name = "idx_users_email", columnList = "email") })

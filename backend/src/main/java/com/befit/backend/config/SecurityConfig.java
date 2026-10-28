@@ -86,15 +86,20 @@ public class SecurityConfig {
                     "/api/patients/cross-branch-search"
                 ).hasAnyRole("ADMIN", "RECEPTIONIST")
 
-                // Only admins and receptionists can manage transfers
+                // Creating a branch manager account: administrators only
+                .requestMatchers(HttpMethod.POST, "/api/staff/managers").hasRole("ADMIN")
+
+                // Transfers: admins, branch managers (own branch) and receptionists (raise / view / withdraw only
+                // while manager approval is required). Who may DECIDE is enforced in TransferService.
                 .requestMatchers("/api/transfers/**")
-                    .hasAnyRole("ADMIN", "RECEPTIONIST")
+                    .hasAnyRole("ADMIN", "BRANCH_MANAGER", "RECEPTIONIST")
 
                 // Only admins and receptionists can access billing
                 .requestMatchers("/api/billing/**")
                     .hasAnyRole("ADMIN", "RECEPTIONIST")
 
-                // Staff-facing management endpoints
+                // Staff-facing management endpoints (BRANCH_MANAGER is deliberately NOT here: patients, appointments,
+                // dashboard and doctor lists stay with front-desk / clinical staff and admins)
                 .requestMatchers(
                     "/api/patients/**",
                     "/api/appointments/**",

@@ -1,9 +1,12 @@
 package com.befit.backend.service;
 
+import com.befit.backend.dto.BillDTO;
 import com.befit.backend.dto.StaffTransferRequest;
 import com.befit.backend.dto.TransferDTO;
+import com.befit.backend.dto.TransferPermissionsDTO;
 import com.befit.backend.dto.TransferRequestBody;
 import com.befit.backend.dto.TransferValidationDTO;
+import com.befit.backend.dto.TransferValidationDTO.DueInvoice;
 import com.befit.backend.dto.TransferValidationDTO.Issue;
 import com.befit.backend.entity.*;
 import com.befit.backend.exception.ApiException;
@@ -34,11 +37,13 @@ import java.util.stream.Collectors;
  *                                so the old branch keeps its history and can still collect its own invoices.
  *
  * WHO may do what
- *   create (staff)  : ADMIN, or a RECEPTIONIST of the patient's CURRENT (source) branch or of the DESTINATION branch.
+ *   create (staff)  : ADMIN, or a BRANCH_MANAGER / RECEPTIONIST of the patient's CURRENT (source) branch or of the DESTINATION branch.
  *   create (patient): the patient themself.
- *   approve/reject  : ADMIN, or a RECEPTIONIST of the DESTINATION branch. Not the person who raised the request
+ *   approve/reject  : ADMIN, or the BRANCH_MANAGER of the DESTINATION branch. Not the person who raised the request
  *                     (befit.transfer.allow-self-approval=false, the default). Doctors never.
- *   cancel          : the patient (own request), ADMIN, or a RECEPTIONIST of the source or destination branch.
+ *                     befit.transfer.manager-approval-required=true (default): receptionists can NOT decide, even at the
+ *                     destination branch. =false: the destination branch's receptionist may decide too (old behaviour).
+ *   cancel          : the patient (own request), ADMIN, or staff (manager / receptionist) of the source or destination branch.
  *
  * CLINIC RULES checked when a request is approved (shown to the approver by validate()):
  *   BLOCKERS  - the patient's branch changed since the request; the destination is inactive; the patient has an open
@@ -47,6 +52,13 @@ import java.util.stream.Collectors;
  *               at their original branch, which keeps collecting them). The approver must tick "acknowledge" and write a
  *               note; the acknowledged warnings are stored on the request.
  *               befit.transfer.block-on-outstanding-invoices=true turns the invoice warning into a blocker.
+ *
+ * BILLING RULE (BEFIT-28): unpaid / partly paid invoices of the patient, at ANY branch, are listed to the approver with
+ * issuing branch, total, paid and balance (computed exactly like the billing module: BillDTO.of). Default rule =
+ * WARN_AND_DOCUMENT: approval needs the acknowledgement tick + a note, and the amount, invoice count and invoice numbers
+ * are stored on the request. Rule BLOCK refuses the transfer while any balance is due. Either way the invoices and their
+ * payments are never moved: they keep their original branch, which stays responsible for collecting them. A transfer is
+ * never applied automatically (no approver) when money is due.
  *
  * befit.transfer.approval-required=true (default): patient/staff asks -> destination receptionist (or admin) approves.
  * befit.transfer.approval-required=false          : a PATIENT's own request is applied immediately (old behaviour); blockers still apply.
@@ -57,6 +69,7 @@ public class TransferService {
     private static final Logger log = LoggerFactory.getLogger(TransferService.class);
     private static final EnumSet<AppointmentStatus> OPEN = EnumSet.of(AppointmentStatus.SCHEDULED, AppointmentStatus.WAITING,
             AppointmentStatus.CHECKED_IN, AppointmentStatus.IN_PROGRESS);
+    private static final int MAX_INVOICES_SHOWN = 50;
     private static final EnumSet<BillStatus> DUE = EnumSet.of(BillStatus.UNPAID, BillStatus.PARTIAL);
 
     private final PatientRepository patientRepository;
@@ -69,13 +82,15 @@ public class TransferService {
     private final boolean approvalRequired;
     private final boolean blockOnOutstandingInvoices;
     private final boolean allowSelfApproval;
+    private final boolean managerApprovalRequired;
 
     public TransferService(PatientRepository patientRepository, PatientBranchHistoryRepository historyRepository,
                            BranchTransferRequestRepository transferRepository, AppointmentRepository appointmentRepository,
                            BillRepository billRepository, BranchService branchService, BranchAccess access,
                            @Value("${befit.transfer.approval-required:true}") boolean approvalRequired,
                            @Value("${befit.transfer.block-on-outstanding-invoices:false}") boolean blockOnOutstandingInvoices,
-                           @Value("${befit.transfer.allow-self-approval:false}") boolean allowSelfApproval) {
+                           @Value("${befit.transfer.allow-self-approval:false}") boolean allowSelfApproval,
+                           @Value("${befit.transfer.manager-approval-required:true}") boolean managerApprovalRequired) {
         this.patientRepository = patientRepository;
         this.historyRepository = historyRepository;
         this.transferRepository = transferRepository;
@@ -86,6 +101,7 @@ public class TransferService {
         this.approvalRequired = approvalRequired;
         this.blockOnOutstandingInvoices = blockOnOutstandingInvoices;
         this.allowSelfApproval = allowSelfApproval;
+        this.managerApprovalRequired = managerApprovalRequired;
     }
 
     // ------------------------------------------------------------------ patient side
@@ -93,14 +109,14 @@ public class TransferService {
     @Transactional
     public TransferDTO requestTransfer(AuthUser user, TransferRequestBody body) {
         Patient p = patientOf(user);
-        return startTransfer(p, body.branchId(), body.reason(), user, false, false);
+        return startTransfer(p, body.branchId(), body.reason(), user, false, false).withoutFinancials();
     }
 
     @Transactional(readOnly = true)
     public List<TransferDTO> myTransfers(AuthUser user) {
         Patient p = patientOf(user);
         return transferRepository.findByPatientIdOrderByRequestedAtDesc(p.getId(), PageRequest.of(0, 10)).stream()
-                .map(t -> toDto(t, p.getFullName(), branchService.nameMap())).toList();
+                .map(t -> toDto(t, p.getFullName(), branchService.nameMap()).withoutFinancials()).toList();
     }
 
     @Transactional
@@ -109,7 +125,7 @@ public class TransferService {
         BranchTransferRequest t = transferRepository.findFirstByPatientIdAndStatus(p.getId(), TransferStatus.PENDING)
                 .orElseThrow(() -> ApiException.notFound("You have no pending transfer request."));
         close(t, TransferStatus.CANCELLED, user, "Cancelled by the patient", null);
-        return toDto(transferRepository.save(t), p.getFullName(), branchService.nameMap());
+        return toDto(transferRepository.save(t), p.getFullName(), branchService.nameMap()).withoutFinancials();
     }
 
     // ------------------------------------------------------------------ staff side
@@ -177,8 +193,10 @@ public class TransferService {
 
         applyMove(p, t.getToBranchId(), user.email(), t.getReason());
         close(t, TransferStatus.APPROVED, user, blankToNull(note), warnings);
-        log.info("Transfer {} APPROVED by {} ({}): patient={} {} -> {}, warnings={}", t.getId(), user.email(), user.role(),
-                p.getId(), t.getFromBranchId(), t.getToBranchId(), warnings == null ? "none" : "acknowledged");
+        recordOutstanding(t, v);
+        log.info("Transfer {} APPROVED by {} ({}): patient={} {} -> {}, warnings={}, outstanding={} on {} invoice(s)", t.getId(), user.email(), user.role(),
+                p.getId(), t.getFromBranchId(), t.getToBranchId(), warnings == null ? "none" : "acknowledged",
+                v.outstandingAmount().toPlainString(), v.outstandingInvoices());
         return toDto(transferRepository.save(t), p.getFullName(), branchService.nameMap());
     }
 
@@ -220,7 +238,7 @@ public class TransferService {
     @Transactional(readOnly = true)
     public TransferDTO pendingFor(Patient p) {
         return transferRepository.findFirstByPatientIdAndStatus(p.getId(), TransferStatus.PENDING)
-                .map(t -> toDto(t, p.getFullName(), branchService.nameMap())).orElse(null);
+                .map(t -> toDto(t, p.getFullName(), branchService.nameMap()).withoutFinancials()).orElse(null);
     }
 
     // ------------------------------------------------------------------ rules
@@ -239,9 +257,15 @@ public class TransferService {
         LocalDateTime startOfTomorrow = LocalDate.now().plusDays(1).atStartOfDay();
         long openNow = appointmentRepository.countByPatientIdAndStatusInAndAppointmentDateBefore(p.getId(), OPEN, startOfTomorrow);
         long future = appointmentRepository.countByPatientIdAndStatusInAndAppointmentDateGreaterThanEqual(p.getId(), OPEN, startOfTomorrow);
-        long dueCount = billRepository.countByPatientIdAndStatusIn(p.getId(), DUE);
-        BigDecimal dueAmount = dueCount == 0 ? BigDecimal.ZERO : billRepository.outstandingBalance(p.getId(), DUE);
-        if (dueAmount == null) dueAmount = BigDecimal.ZERO;
+        Map<String, String> branchNames = branchService.nameMap();
+        List<DueInvoice> due = billRepository.findByPatientIdAndStatusInOrderByBillDateAsc(p.getId(), DUE).stream()
+                .map(b -> BillDTO.of(b, branchNames.get(b.getBranchId())))      // same balance maths as the billing screens
+                .filter(d -> d.balanceDue().signum() > 0)
+                .map(d -> new DueInvoice(d.id(), d.invoiceNumber(), d.branchId(), d.branchName(), d.billDate(), d.status(),
+                        d.totalAmount(), d.amountPaid(), d.balanceDue()))
+                .toList();
+        long dueCount = due.size();
+        BigDecimal dueAmount = due.stream().map(DueInvoice::balanceDue).reduce(BigDecimal.ZERO, BigDecimal::add);
 
         if (openNow > 0) {
             blockers.add(new Issue("OPEN_APPOINTMENT", openNow + " open appointment(s) due today or overdue. Complete or cancel them before the transfer."));
@@ -250,12 +274,18 @@ public class TransferService {
             warnings.add(new Issue("FUTURE_APPOINTMENT", future + " upcoming appointment(s) stay booked at their original branch and are not moved. Cancel or rebook them if needed."));
         }
         if (dueCount > 0) {
-            Issue due = new Issue("OUTSTANDING_INVOICES", dueCount + " invoice(s) with " + dueAmount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
-                    + " still due. They stay with their original branch, which keeps collecting them.");
-            (blockOnOutstandingInvoices ? blockers : warnings).add(due);
+            String owners = due.stream().map(d -> d.branchName() != null ? d.branchName() : d.branchId()).distinct().collect(Collectors.joining(", "));
+            Issue issue = blockOnOutstandingInvoices
+                    ? new Issue("OUTSTANDING_INVOICES", dueCount + " unpaid or partly paid invoice(s), " + dueAmount.toPlainString()
+                        + " still due (" + owners + "). Settle them before the transfer.")
+                    : new Issue("OUTSTANDING_INVOICES", dueCount + " unpaid or partly paid invoice(s), " + dueAmount.toPlainString()
+                        + " still due. They stay with their original branch (" + owners + "), which remains responsible for collecting them.");
+            (blockOnOutstandingInvoices ? blockers : warnings).add(issue);
         }
+        int shown = Math.min(due.size(), MAX_INVOICES_SHOWN);
         return new TransferValidationDTO(transferId, status, blockers.isEmpty(), !warnings.isEmpty(), blockers, warnings,
-                openNow, future, dueCount, dueAmount);
+                openNow, future, dueCount, dueAmount, blockOnOutstandingInvoices ? "BLOCK" : "WARN_AND_DOCUMENT",
+                due.subList(0, shown), due.size() - shown);
     }
 
     /** Throws unless the decision may go ahead; returns the acknowledged warnings (joined) for the audit trail, or null. */
@@ -275,6 +305,17 @@ public class TransferService {
     }
 
     // ------------------------------------------------------------------ shared
+
+    /** Financial snapshot on the request: what was still due when the patient moved (the invoices themselves stay put). */
+    private void recordOutstanding(BranchTransferRequest t, TransferValidationDTO v) {
+        if (v.outstandingInvoices() == 0) return;
+        t.setOutstandingAmount(v.outstandingAmount());
+        t.setOutstandingInvoices((int) v.outstandingInvoices());
+        String refs = v.dueInvoices().stream().map(d -> d.invoiceNumber() + "@" + d.branchId())
+                .collect(Collectors.joining(", "));
+        if (v.dueInvoicesNotShown() > 0) refs += " (+" + v.dueInvoicesNotShown() + " more)";
+        t.setOutstandingInvoiceRefs(refs.length() > 500 ? refs.substring(0, 500) : refs);
+    }
 
     private TransferDTO startTransfer(Patient p, String toBranchId, String reason, AuthUser actor, boolean forceImmediate, boolean staffRequest) {
         return startTransfer(p, toBranchId, reason, actor, forceImmediate, staffRequest, false);
@@ -297,13 +338,24 @@ public class TransferService {
         t.setRequestedBy(actor.email());
         t.setRequestedByRole(actor.role() == null ? null : actor.role().name());
 
-        boolean immediate = forceImmediate || (!approvalRequired && !staffRequest);
-        if (immediate) {
-            TransferValidationDTO v = validate(p, p.getBranchId(), target.getId(), null, "PENDING");
-            // An admin must acknowledge warnings (and give the reason as note); a patient's auto-applied request has no one to ask.
-            String warnings = forceImmediate ? enforce(v, acknowledged, t.getReason()) : enforce(v, true, "auto");
+        boolean immediate = forceImmediate;
+        TransferValidationDTO v = null;
+        if (forceImmediate) {
+            v = validate(p, p.getBranchId(), target.getId(), null, "PENDING");
+            // An admin must acknowledge warnings (and give the reason as note), exactly like an approver.
+            String warnings = enforce(v, acknowledged, t.getReason());
             applyMove(p, target.getId(), actor.email(), t.getReason());
-            close(t, TransferStatus.APPROVED, actor, forceImmediate ? "Transferred directly by an administrator" : "Applied immediately (approval not required)", warnings);
+            close(t, TransferStatus.APPROVED, actor, "Transferred directly by an administrator", warnings);
+            recordOutstanding(t, v);
+        } else if (!approvalRequired && !staffRequest) {
+            // Approval switched off: a patient's own request is applied at once ONLY when there is nothing to review.
+            // Open visits or money due always go to a person, so financial responsibility is never dropped silently.
+            v = validate(p, p.getBranchId(), target.getId(), null, "PENDING");
+            if (v.blockers().isEmpty() && v.warnings().isEmpty()) {
+                immediate = true;
+                applyMove(p, target.getId(), actor.email(), t.getReason());
+                close(t, TransferStatus.APPROVED, actor, "Applied immediately (approval not required, nothing to review)", null);
+            }
         }
         BranchTransferRequest saved = transferRepository.save(t);
         log.info("Transfer {} {} by {} ({}): patient={} {} -> {}", saved.getId(), immediate ? "APPLIED" : "REQUESTED",
@@ -336,9 +388,17 @@ public class TransferService {
         t.setDecisionWarnings(warnings);
     }
 
-    /** Loads a request the caller is allowed to APPROVE/REJECT: staff role, receiving branch (or admin), still pending, not their own. */
+    /**
+     * Loads a request the caller is allowed to APPROVE/REJECT: a role that may decide (admin, branch manager, or a
+     * receptionist only when manager approval is not required), the receiving branch (or admin), still pending, not their own.
+     */
     private BranchTransferRequest loadForDecision(AuthUser user, Long id) {
         requireStaffRole(user);
+        if (!BranchAccess.mayDecideTransfers(user, managerApprovalRequired)) {
+            throw ApiException.forbidden(user.role() == Role.RECEPTIONIST
+                    ? "Transfers must be approved or rejected by the destination branch manager or an administrator."
+                    : "You are not allowed to approve or reject transfer requests.");
+        }
         BranchTransferRequest t = transferRepository.findById(id).orElseThrow(() -> ApiException.notFound("Transfer request not found."));
         access.requireBranch(user, t.getToBranchId()); // only the receiving branch (or an admin) decides
         requirePending(t);
@@ -355,9 +415,17 @@ public class TransferService {
     }
 
     private static void requireStaffRole(AuthUser user) {
-        if (user.role() != Role.ADMIN && user.role() != Role.RECEPTIONIST) {
-            throw ApiException.forbidden("Only receptionists and administrators can manage branch transfers.");
+        if (!BranchAccess.mayUseTransfers(user)) {
+            throw ApiException.forbidden("Only receptionists, branch managers and administrators can manage branch transfers.");
         }
+    }
+
+    /** What this user may do (for the UI). Doctors / patients get nothing; the endpoints reject them anyway. */
+    public TransferPermissionsDTO permissionsFor(AuthUser user) {
+        boolean uses = BranchAccess.mayUseTransfers(user);
+        boolean hasBranch = user.isAdmin() || (user.branchId() != null && !user.branchId().isBlank());
+        return new TransferPermissionsDTO(uses && hasBranch, uses && hasBranch && BranchAccess.mayDecideTransfers(user, managerApprovalRequired),
+                managerApprovalRequired);
     }
 
     private static String blankToNull(String s) { return s == null || s.isBlank() ? null : s.trim(); }
