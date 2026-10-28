@@ -5,12 +5,14 @@ import TransferTabs, { STATUS_BADGE } from '../components/transfers/TransferTabs
 import { fmtDateTime } from '../utils/format';
 
 /**
- * Transfer requests LEAVING this branch, plus a form to raise a new one for one of this branch's patients.
- * A request is only a request: the receiving branch (or an admin) decides. Until then the patient stays here.
- * Admins: pick the branch in the top bar to see its patients; the server decides what is allowed.
+ * Outgoing transfer tracking: requests LEAVING this branch, their status, and who decided what.
+ * The receiving branch decides; this page only follows the request (it never shows the receiving branch's queue or its
+ * internal review). Counts, rows and actions all come from /api/transfers, which the server limits to this branch.
+ * Receptionists can also raise a new request here for one of this branch's patients and withdraw a pending one.
  */
 export default function OutgoingTransfers() {
-  const [status, setStatus] = useState('PENDING');
+  const [status, setStatus] = useState('ALL');
+  const [counts, setCounts] = useState({ PENDING: 0, APPROVED: 0, REJECTED: 0, CANCELLED: 0 });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -33,7 +35,15 @@ export default function OutgoingTransfers() {
     } finally { setLoading(false); }
   }, [status]);
 
+  const loadCounts = useCallback(async () => {
+    try {
+      const res = await axios.get('/api/transfers/summary', { params: { direction: 'OUTGOING' } });
+      setCounts(res.data);
+    } catch { /* the table below still works; counts are only a convenience */ }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadCounts(); }, [loadCounts]);
 
   useEffect(() => {
     if (!isManager) axios.get('/api/patients/options').then((r) => setPatients(r.data)).catch(() => {});
@@ -55,7 +65,7 @@ export default function OutgoingTransfers() {
       });
       setNotice('Transfer request sent. The patient stays at this branch until the receiving branch approves it.');
       setForm({ patientId: '', toBranchId: '', reason: '' });
-      load();
+      load(); loadCounts();
     } catch (err) {
       setError(await errorMessage(err, 'Could not create the transfer request.'));
     } finally { setSubmitting(false); }
@@ -68,7 +78,7 @@ export default function OutgoingTransfers() {
     try {
       await axios.post(`/api/transfers/${t.id}/cancel`, { note: reason || null });
       setNotice('Request withdrawn.');
-      load();
+      load(); loadCounts();
     } catch (err) {
       setError(await errorMessage(err, 'Could not withdraw the request.'));
     } finally { setBusyId(null); }
@@ -82,13 +92,22 @@ export default function OutgoingTransfers() {
         <div className="flex justify-between items-end mb-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Branch Transfers</h1>
-            <p className="text-[13px] text-slate-500 mt-1">Requests to move this branch’s patients elsewhere</p>
+            <p className="text-[13px] text-slate-500 mt-1">Follow the transfer requests you sent to other branches. The receiving branch makes the decision.</p>
           </div>
           <select value={status} onChange={(e) => setStatus(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm shadow-sm">
             {['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'ALL'].map((s) => <option key={s} value={s}>{s === 'ALL' ? 'All' : s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
           </select>
         </div>
         <TransferTabs active="outgoing" />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+          {[['ALL', 'All requests', Object.values(counts).reduce((a, b) => a + b, 0)], ['PENDING', 'Pending', counts.PENDING], ['APPROVED', 'Approved', counts.APPROVED], ['REJECTED', 'Rejected', counts.REJECTED], ['CANCELLED', 'Cancelled', counts.CANCELLED]].map(([key, label, n]) => (
+            <button key={key} type="button" onClick={() => setStatus(key)}
+              className={`text-left rounded-xl border p-4 transition ${status === key ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100 hover:bg-slate-50'}`}>
+              <div className="text-2xl font-bold text-slate-800">{n ?? 0}</div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
+            </button>
+          ))}
+        </div>
         {error && <div className="mb-3 bg-red-50 border border-red-100 text-red-700 text-sm rounded-lg p-3">{error}</div>}
         {notice && <div className="mb-3 bg-green-50 border border-green-100 text-green-800 text-sm rounded-lg p-3">{notice}</div>}
 
@@ -133,9 +152,13 @@ export default function OutgoingTransfers() {
                     <td className="px-6 py-4">{t.fromBranchName} → <b>{t.toBranchName}</b></td>
                     <td className="px-6 py-4 max-w-[240px]">{t.reason || '—'}</td>
                     <td className="px-6 py-4 whitespace-nowrap">{fmtDateTime(t.requestedAt)}<div className="text-[11px] text-slate-400">by {t.requestedBy}</div></td>
-                    <td className="px-6 py-4 max-w-[240px]">
-                      {t.decidedBy ? <><div className="text-[12px]">{t.decidedBy}</div><div className="text-[11px] text-slate-400">{fmtDateTime(t.decidedAt)}</div></> : <span className="text-slate-400">Waiting for {t.toBranchName}</span>}
-                      {t.decisionNote && <div className="text-[11px] text-slate-500">Note: {t.decisionNote}</div>}
+                    <td className="px-6 py-4 max-w-[260px]">
+                      {t.decidedBy ? (<>
+                        <div className="text-[11px] font-bold uppercase text-slate-400">{t.status === 'APPROVED' ? 'Approved by' : t.status === 'REJECTED' ? 'Rejected by' : 'Withdrawn by'}</div>
+                        <div className="text-[12px]">{t.decidedBy}</div>
+                        <div className="text-[11px] text-slate-400">{fmtDateTime(t.decidedAt)}</div>
+                      </>) : <span className="text-slate-400">Waiting for {t.toBranchName}</span>}
+                      {t.decisionNote && <div className="text-[11px] text-slate-500 mt-1">Note: {t.decisionNote}</div>}
                     </td>
                     <td className="px-6 py-4"><span className={`text-[9px] font-bold px-2 py-1 rounded border uppercase ${STATUS_BADGE[t.status]}`}>{t.status}</span></td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">

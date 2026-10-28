@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Staff side of branch transfers (ADMIN / BRANCH_MANAGER / RECEPTIONIST - see SecurityConfig, and re-checked in TransferService).
@@ -34,7 +35,19 @@ public class TransferController {
         return transferService.permissionsFor(access.current());
     }
 
-    /** ?status=PENDING (default) | APPROVED | REJECTED | CANCELLED | ALL   &direction=INCOMING (default) | OUTGOING */
+    /** Counts per status (PENDING / APPROVED / REJECTED / CANCELLED) for the caller's branch. ?direction=OUTGOING | INCOMING (default). */
+    @GetMapping("/summary")
+    public Map<String, Long> summary(@RequestParam(required = false) String branchId,
+                                     @RequestParam(defaultValue = "INCOMING") String direction) {
+        return transferService.summaryForStaff(access.current(), branchId, direction);
+    }
+
+    /**
+     * ?status=PENDING (default) | APPROVED | REJECTED | CANCELLED | ALL   &direction=INCOMING (default) | OUTGOING
+     * INCOMING = the caller's own approval queue (requests TO their branch). OUTGOING = requests FROM their branch, shown
+     * as a tracking view (status, approver, decision) without the destination's internal review details.
+     * Both are limited to the caller's branch by the server; only admins see every branch.
+     */
     @GetMapping
     public List<TransferDTO> list(@RequestParam(required = false) String branchId,
                                   @RequestParam(defaultValue = "PENDING") String status,
@@ -51,7 +64,7 @@ public class TransferController {
     /** Open appointments, upcoming visits and unpaid invoices that the approver must consider. */
     @GetMapping("/{id}/validation")
     public TransferValidationDTO validation(@PathVariable Long id) {
-        return transferService.validationFor(access.current(), id);
+        return transferService.validationFor(access.current(), id);   // destination branch / admin only
     }
 
     /** Body: { "note": "...", "acknowledgeWarnings": true } - the acknowledgement + note are required when the validation has warnings. */
