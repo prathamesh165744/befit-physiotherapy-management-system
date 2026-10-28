@@ -37,7 +37,7 @@ export default function StaffLayout({ children }) {
     { name: 'Patients', path: '/staff-dashboard/patients', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> },
     { name: 'Appointments', path: '/staff-dashboard/appointments', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> },
     { name: 'Billing', roles: ['ADMIN', 'RECEPTIONIST'], path: '/staff-dashboard/billing', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> },
-    { name: 'Transfers', roles: ['ADMIN', 'RECEPTIONIST'], path: '/staff-dashboard/transfers', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg> },
+    { name: 'Transfers', roles: ['ADMIN', 'BRANCH_MANAGER', 'RECEPTIONIST'], path: '/staff-dashboard/transfers', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg> },
     { name: 'History', path: '/staff-dashboard/history', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> }
   ];
 
@@ -72,7 +72,7 @@ export default function StaffLayout({ children }) {
           </div>
 
           <nav className="p-4 space-y-2 mt-2">
-            {menuItems.filter((item) => !item.roles || item.roles.includes(role)).map((item) => {
+            {menuItems.filter((item) => (item.roles ? item.roles.includes(role) : role !== 'BRANCH_MANAGER')).map((item) => {
               const isActive = location.pathname === item.path || (location.pathname === '/staff-dashboard/' && item.path === '/staff-dashboard');
               return (
                 <Link 

@@ -48,6 +48,10 @@ public interface BillRepository extends JpaRepository<Bill, Long> {
     List<Bill> findByPatientIdOrderByBillDateDesc(Long patientId, Pageable pageable);
 
     boolean existsByPatientIdAndBranchId(Long patientId, String branchId);
+
+    /** Transfer validation: the patient's invoices (any branch) in the given statuses, oldest first. Read-only use. */
+    List<Bill> findByPatientIdAndStatusInOrderByBillDateAsc(Long patientId, Collection<BillStatus> statuses);
+
     boolean existsByAppointmentIdAndStatusNot(Long appointmentId, BillStatus status);
 
     // ---- startup backfill helpers (DataFixer) ----

@@ -14,4 +14,6 @@ public interface BranchTransferRequestRepository extends JpaRepository<BranchTra
     List<BranchTransferRequest> findByPatientIdOrderByRequestedAtDesc(Long patientId, Pageable pageable);
     List<BranchTransferRequest> findByToBranchIdInAndStatusOrderByRequestedAtDesc(Collection<String> toBranchIds, TransferStatus status, Pageable pageable);
     List<BranchTransferRequest> findByToBranchIdInOrderByRequestedAtDesc(Collection<String> toBranchIds, Pageable pageable);
+    List<BranchTransferRequest> findByFromBranchIdInAndStatusOrderByRequestedAtDesc(Collection<String> fromBranchIds, TransferStatus status, Pageable pageable);
+    List<BranchTransferRequest> findByFromBranchIdInOrderByRequestedAtDesc(Collection<String> fromBranchIds, Pageable pageable);
 }

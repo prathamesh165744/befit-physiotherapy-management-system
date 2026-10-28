@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
 import Login from './auth/Login';
 import Register from './auth/Register';
@@ -16,6 +16,12 @@ import Billing from './pages/Billing';
 import AppointmentsList from './pages/AppointmentsList';
 import History from './pages/History';
 import TransferRequests from './pages/TransferRequests';
+import OutgoingTransfers from './pages/OutgoingTransfers';
+
+// Branch managers only work with transfers; the dashboard / patient / billing data is not theirs, so send them straight there.
+function StaffHome() {
+  return localStorage.getItem('role') === 'BRANCH_MANAGER' ? <Navigate to="/staff-dashboard/transfers" replace /> : <StaffDashboard />;
+}
 
 function App() {
   return (
@@ -40,14 +46,15 @@ function App() {
         <Route
           path="/staff-dashboard/*"
           element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'DOCTOR', 'RECEPTIONIST']}>
+            <ProtectedRoute allowedRoles={['ADMIN', 'BRANCH_MANAGER', 'DOCTOR', 'RECEPTIONIST']}>
               <Routes>
-                <Route path="/" element={<StaffDashboard />} />
+                <Route path="/" element={<StaffHome />} />
                 <Route path="/patients" element={<PatientsDirectory />} />
                 <Route path="/patients/:id" element={<StaffPatientProfile />} />
                 <Route path="/appointments" element={<AppointmentsList />} />
                 <Route path="/billing" element={<Billing />} />
                 <Route path="/transfers" element={<TransferRequests />} />
+                <Route path="/transfers/outgoing" element={<OutgoingTransfers />} />
                 <Route path="/history" element={<History />} />
               </Routes>
             </ProtectedRoute>
