@@ -305,12 +305,22 @@ public class PatientService {
     /** A patient sees their OWN history across every branch, each row labelled with the branch where it happened. */
     @Transactional(readOnly = true)
     public PatientHistoryDTO myHistory(AuthUser user) {
-        return buildHistory(mine(user), branchRepository.findAllIds(), true, true);
+        // ALL branches, so visits and invoices stay visible after a transfer. Staff e-mail addresses are not shared with patients.
+        PatientHistoryDTO h = buildHistory(mine(user), branchRepository.findAllIds(), true, true);
+        var stints = h.branchHistory().stream()
+                .map(b -> new PatientHistoryDTO.BranchStint(b.branchId(), b.branchName(), b.fromDate(), b.toDate(), null, b.reason())).toList();
+        return new PatientHistoryDTO(h.appointments(), h.bills(), stints);
     }
 
     // ------------------------------------------------------------------ helpers
 
+    /**
+     * The patient who IS the logged-in user. Ownership comes only from the authenticated identity (token -> user email ->
+     * linked patient), never from an id or branch in the request, so one patient cannot reach another's record, and a
+     * patient's access does not depend on which branch they are at. Staff tokens are refused here as well.
+     */
     private Patient mine(AuthUser user) {
+        if (user.role() != Role.PATIENT) throw ApiException.forbidden("This area is only for patients.");
         return patientRepository.findByUserEmail(user.email())
                 .orElseThrow(() -> new ApiException(404, "PROFILE_NOT_FOUND", "No patient profile is linked to this account."));
     }

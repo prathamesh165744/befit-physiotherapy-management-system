@@ -121,3 +121,98 @@ I could not run Maven or a database in my environment (no access to Maven Centra
 * Decide whether branch transfers need approval (`befit.transfer.approval-required`).
 * Story 9 (email/WhatsApp bill delivery) and appointment-slot availability (Story 4) do not exist in the uploaded code and still need building.
 * No refresh-token mechanism exists in the project; an expired token sends the user to login (with a message). Adding refresh tokens is a separate piece of work.
+
+## BEFIT-23 – Authorized limited cross-branch patient profile
+
+`BranchAccess.patientAccess(user, patient)` is now the single rule for opening a patient's file (`GET /api/patients/{id}`, `/{id}/history`, and the billing/appointment callers of `requireStaffAccess`):
+
+| Level | Who | Sees |
+|---|---|---|
+| FULL | ADMIN; DOCTOR/RECEPTIONIST of the patient's current branch | Full profile, own-branch visits/invoices, branch-move log |
+| TEMPORARY_VISIT | DOCTOR/RECEPTIONIST of a branch with an open appointment for the patient (or one completed within `befit.access.temporary-visit-grace-days`) | REG id, name, gender, DOB, masked phone, home branch, **own-branch** visits (+ own-branch invoices for receptionists) |
+| HISTORICAL | Staff of a former home branch / branch that treated or billed the patient | Same limited view |
+| DENIED | Everyone else | 403 |
+
+Limited responses are built server-side (`PatientProfileDTO.limited`): address, emergency contact, blood group, occupation, medical history, registration date, transfer info and the branch-move log are never sent. Patients keep `/api/patients/me/**` (accessLevel `SELF`). `SecurityConfig` is unchanged - no patient endpoint was opened up.
+
+## BEFIT-25 – Cross-branch appointment / temporary visit
+
+`POST /api/appointments` accepts an optional `branchId` = the branch where the visit takes place.
+
+* No `branchId` (or the patient's own branch): unchanged - booked at the patient's current branch by staff of that branch / admin.
+* A different branch: a **cross-branch visit**. `BranchAccess.branchForVisit` allows only an ADMIN, or a RECEPTIONIST booking into **their own** branch. Doctors, other branches' staff and patients get 403.
+* The appointment gets the receiving branch's `branch_id`; **`Patient.branchId` is never changed** and no patient row is created. Branch B staff manage it with the existing `PUT /api/appointments/{id}/status` (already branch-checked), and the invoice keeps Branch B.
+* Checks: receiving branch exists and is active; date not in the past; doctor required, active, role DOCTOR and **at the receiving branch**; doctor slot free (`SLOT_TAKEN`); patient not already booked at that time at **any** branch (`PATIENT_BUSY` - also applies to normal bookings now).
+* The open appointment is what gives Branch B the BEFIT-23 *temporary visit* limited view of the profile.
+* `AppointmentDTO` gains `patientHomeBranchId` and `crossBranch` so lists can show "Visiting · home X".
+* A patient with an open visit still cannot be transferred (existing rule).
+
+## BEFIT-26 – Permanent transfer validation & workflow
+
+Roles
+| Action | Who |
+|---|---|
+| Raise a request (`POST /api/transfers`) | ADMIN; RECEPTIONIST of the patient's current (source) branch or of the destination branch. Patients still use `PUT /api/patients/me/branch`. Always PENDING. |
+| Approve / reject | ADMIN or RECEPTIONIST of the **destination** branch. Never the person who raised it (`befit.transfer.allow-self-approval=false`). Doctors never. |
+| Withdraw (`POST /api/transfers/{id}/cancel`) | ADMIN; RECEPTIONIST of source or destination branch; the patient (own request). |
+| Direct move (`POST /api/patients/{id}/transfer`) | ADMIN only, same rules as an approval. |
+
+Creating a request checks only structure: destination exists, is active, differs from the source (`fromBranchId`, if sent, must be the patient's current branch), no other pending request, reason given (staff).
+
+`GET /api/transfers/{id}/validation` (source/destination staff, admin) is what the approver sees; `approve` re-runs it on the server:
+* **Blockers** (cannot approve): patient's branch changed since the request; destination inactive; open appointment due today/overdue; unpaid invoices only if `befit.transfer.block-on-outstanding-invoices=true`.
+* **Warnings** (need `acknowledgeWarnings=true` + a note): upcoming appointments (stay booked at their original branch); invoices with money still due (stay with, and are collected by, their original branch).
+
+Audit: `branch_transfer_requests` now also stores `requested_by_role` and `decision_warnings`, next to requester, approver (`decided_by`), `decided_at`, reason and note; `patient_branch_history` gets the new stint (authorised by the approver). Approvals, rejections, withdrawals are logged. Appointments, bills and payments are never modified by a transfer. `GET /api/transfers?direction=INCOMING|OUTGOING` feeds the two staff screens (`TransferRequests.jsx`, new `OutgoingTransfers.jsx`).
+
+Behaviour change: a patient's own request is no longer refused up front because of an open appointment - the approver now sees it as a blocker instead.
+
+## BEFIT-28 – Outstanding billing validation during transfer
+
+* **Rule (clinic policy, `befit.transfer.block-on-outstanding-invoices`)**: default `false` = **WARN_AND_DOCUMENT** - a transfer with unpaid / partly paid invoices may be approved only after the approver ticks the acknowledgement and writes a note; `true` = **BLOCK** - no approval while any balance is due. Applies to approvals and to the admin's direct transfer.
+* **What the approver sees** (`GET /api/transfers/{id}/validation`): every UNPAID / PARTIAL invoice of the patient at **any** branch with invoice no., date, status, issuing branch, total, paid and balance (computed by `BillDTO.of`, the same maths as the billing screens; cancelled and paid invoices are excluded, balances never negative), plus the total. List capped at 50, totals always cover all invoices.
+* **Documented approval**: the transfer request stores `outstanding_amount`, `outstanding_invoices`, `outstanding_invoice_refs` (e.g. `INV-12@KOTHRUD`), together with the acknowledged warning text, note, approver and time.
+* **Financial responsibility**: invoices and payments are never modified or moved; they keep their branch, which keeps collecting them. If approval is switched off (`approval-required=false`), a patient's own request is auto-applied only when nothing is due/open - otherwise it waits for a person.
+* **Protection**: invoice details are returned only to ADMIN and receptionists of the transfer's source/destination branch; doctors, patients and other branches get 403. Patient-facing transfer responses carry no financial fields (`TransferDTO.withoutFinancials`).
+
+## BEFIT-29 – Branch-manager authorization for transfer approvals
+
+**Business rule (please confirm with the clinic):** `befit.transfer.manager-approval-required` (default `true`).
+* `true`: a transfer is approved/rejected only by the **BRANCH_MANAGER of the destination branch** or an **ADMIN**. Receptionists can raise and withdraw requests, not decide them.
+* `false`: the destination branch's receptionist may decide too (previous behaviour). Managers and admins always can.
+
+**`BRANCH_MANAGER` role** (`Role.java`): tied to exactly one branch (`User.branchId`, never null). Branch-scoped through the same `BranchAccess` code as other staff (`visibleBranchIds`, `branchForCreate`, `requireBranch` all resolve to their own branch; the `?branchId=` parameter is ignored). It is **not** in the patients / appointments / dashboard / doctors / billing / branch-admin rules in `SecurityConfig`, has no patient-profile access, and cannot do the admin direct transfer. Its only endpoints are `/api/transfers/**`.
+
+| Action | ADMIN | BRANCH_MANAGER | RECEPTIONIST | DOCTOR / PATIENT |
+|---|---|---|---|---|
+| Raise a request | any | own branch is source or destination | own branch is source or destination | no |
+| Approve / reject | yes | destination branch only | only if rule = `false`, destination only | no |
+| Withdraw | yes | source or destination branch | source or destination branch | no |
+| List / validation | all | own branch only | own branch only | no |
+| Direct transfer | yes | no | no | no |
+
+The requester still cannot decide their own request (`allow-self-approval=false`).
+
+New: `GET /api/transfers/permissions` (what the UI may show), `POST /api/staff/managers` (admin only, creates a manager for one active branch; `UserService.createBranchManager`), demo managers `manager.karve|baner|viman|kothrud@befit.com` / `manager123` seeded per existing branch (`DataSeeder`, idempotent, also on existing databases).
+
+**Existing PostgreSQL databases:** Hibernate's CHECK constraint on `users.role` does not know the new value, so `RoleConstraintMigrator` (start-up, idempotent, never deletes data) replaces `users_role_check` to allow `BRANCH_MANAGER`. If it cannot (permissions), it logs the one SQL statement to run.
+
+Frontend: managers log in straight to Transfers, only see the Transfers menu item, and approve/reject buttons appear only when `/api/transfers/permissions` says `canDecide`; receptionists see "Awaiting manager".
+
+## BEFIT-30 – Outgoing transfer tracking
+
+* `GET /api/transfers?direction=OUTGOING&status=ALL|PENDING|APPROVED|REJECTED|CANCELLED` lists requests **from** the caller's branch (admins: all branches). Each row has patient (id/name), source and destination branch, reason, requested by/when, status, **decided by / when / note**. It is a tracking view: the destination approver's internal review (acknowledged warnings, invoice snapshot) is never included (`TransferDTO.forSourceBranch`).
+* `GET /api/transfers/summary?direction=OUTGOING|INCOMING` returns the count per status (all four always present) for the caller's branch; the page shows them as clickable cards.
+* Branch scoping is server-side (`BranchAccess.visibleBranchIds`): the `branchId` parameter is ignored for non-admins, so a source-branch user can never read another branch's outgoing list, and their INCOMING list is their own queue, not the destination's.
+* **Behaviour change:** `GET /api/transfers/{id}/validation` (the approval review with invoices due) is now limited to the **destination** branch and admins; the source branch follows the request through the outgoing list instead.
+* Doctors and patients get 403 on every transfer API. `OutgoingTransfers.jsx` gains status cards, "Approved / Rejected / Withdrawn by" decision details and defaults to all statuses; `TransferRequests.jsx` (the destination's approval queue) is unchanged.
+
+## BEFIT-31 – Patient portal
+
+**Ownership is identity-based.** Every patient endpoint (`/api/patients/me`, `/me/history`, `/me/transfers`, `PUT /me`, `PUT /me/branch`, `DELETE /me/branch-request`) finds the patient from the login token (`AuthUser.email` → linked patient). There is no patient id or branch in the request, so a patient cannot reach another's record, and nothing depends on receptionist branch filtering (`/me/history` always spans **all** branches, so visits and invoices stay visible after a transfer). New: those endpoints now also refuse non-patient tokens (403), and the staff `/api/patients/{id}` APIs deny the PATIENT role.
+
+Privacy: patients no longer receive staff e-mail addresses (branch-move `authorizedBy`, transfer `decidedBy`) or the approver's financial snapshot; they still see status, decision time and note (`TransferDTO.forPatient`).
+
+Frontend: `PatientDashboard.jsx` was static mock data; it now loads the real profile, upcoming/next appointment (with its branch, marking visits away from the patient's branch), visit history of all branches and the latest transfer status, with loading / error+retry / empty states. `PatientProfile.jsx` gets loading, error+retry and empty states for visits and branch-change requests, status badges and decision details. `PatientLayout.jsx`: working Dashboard / My Profile links, real name (the fake "Doe"/"Jane" is gone), full logout (`localStorage.clear()`), fake search / notification / "24/7 support" items removed.
+
+Tests: backend `PatientSelfServiceTest`; frontend (Vitest + Testing Library) `patientPortal.test.js`, `PatientDashboard.test.jsx`, `PatientProfile.test.jsx`. One-time setup: `npm install -D vitest jsdom @testing-library/react @testing-library/user-event @testing-library/jest-dom`, then `npm test`.

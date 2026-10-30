@@ -109,14 +109,14 @@ public class TransferService {
     @Transactional
     public TransferDTO requestTransfer(AuthUser user, TransferRequestBody body) {
         Patient p = patientOf(user);
-        return startTransfer(p, body.branchId(), body.reason(), user, false, false).withoutFinancials();
+        return startTransfer(p, body.branchId(), body.reason(), user, false, false).forPatient();
     }
 
     @Transactional(readOnly = true)
     public List<TransferDTO> myTransfers(AuthUser user) {
         Patient p = patientOf(user);
         return transferRepository.findByPatientIdOrderByRequestedAtDesc(p.getId(), PageRequest.of(0, 10)).stream()
-                .map(t -> toDto(t, p.getFullName(), branchService.nameMap()).withoutFinancials()).toList();
+                .map(t -> toDto(t, p.getFullName(), branchService.nameMap()).forPatient()).toList();
     }
 
     @Transactional
@@ -125,7 +125,7 @@ public class TransferService {
         BranchTransferRequest t = transferRepository.findFirstByPatientIdAndStatus(p.getId(), TransferStatus.PENDING)
                 .orElseThrow(() -> ApiException.notFound("You have no pending transfer request."));
         close(t, TransferStatus.CANCELLED, user, "Cancelled by the patient", null);
-        return toDto(transferRepository.save(t), p.getFullName(), branchService.nameMap()).withoutFinancials();
+        return toDto(transferRepository.save(t), p.getFullName(), branchService.nameMap()).forPatient();
     }
 
     // ------------------------------------------------------------------ staff side
@@ -451,7 +451,9 @@ public class TransferService {
 
     private static String blankToNull(String s) { return s == null || s.isBlank() ? null : s.trim(); }
 
+    /** The patient who IS the logged-in user (identity from the token, never from the request). Staff tokens are refused. */
     private Patient patientOf(AuthUser user) {
+        if (user.role() != Role.PATIENT) throw ApiException.forbidden("This area is only for patients.");
         return patientRepository.findByUserEmail(user.email())
                 .orElseThrow(() -> new ApiException(404, "PROFILE_NOT_FOUND", "No patient profile is linked to this account."));
     }
