@@ -1,36 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate, NavLink } from 'react-router-dom';
 import {
-  Calendar,
-  Clock,
-  HelpCircle,
-  Search,
-  Bell,
+  LayoutDashboard,
   User,
-  FileText,
   ChevronDown,
   Menu,
   X,
   LogOut,
 } from 'lucide-react';
 
-/* Links that live in the sidebar on desktop */
-const sidebarItems = [
-  { label: 'Appointments', icon: Calendar, active: true },
-  { label: 'Treatment History', icon: Clock },
-  { label: 'Help Assistant', icon: HelpCircle },
+/* The patient portal has two real pages. */
+const navItems = [
+  { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard', end: true },
+  { label: 'My Profile', icon: User, to: '/dashboard/profile', end: false },
 ];
 
-/* Links that are horizontal in the header on tablet/desktop.
-   On small screens they move into the drawer and stack vertically. */
-const headerItems = [
-  { label: 'Appointments', icon: Calendar },
-  { label: 'Treatment Plans', icon: FileText },
-];
-
-const linkClass = (active) =>
+const linkClass = ({ isActive }) =>
   `flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition ${
-    active
+    isActive
       ? 'bg-blue-50 text-blue-700'
       : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
   }`;
@@ -63,40 +50,22 @@ const SidebarContent = ({ onNavigate, onClose }) => (
 
       {/* Sidebar links */}
       <nav className="p-4 space-y-2 mt-4">
-        {sidebarItems.map(({ label, icon: Icon, active }) => (
-          <a key={label} href="#" onClick={onNavigate} className={linkClass(active)}>
+        {navItems.map(({ label, icon: Icon, to, end }) => (
+          <NavLink key={label} to={to} end={end} onClick={onNavigate} className={linkClass}>
             <Icon size={20} />
             <span>{label}</span>
-          </a>
+          </NavLink>
         ))}
-
-        {/* Header links, stacked vertically — drawer only, small screens only */}
-        {onClose && (
-          <div className="md:hidden pt-2">
-            <div className="border-t border-slate-100 mb-2" />
-            {headerItems
-              .filter((i) => i.label !== 'Appointments') /* already listed above */
-              .map(({ label, icon: Icon }) => (
-                <a key={label} href="#" onClick={onNavigate} className={linkClass(false)}>
-                  <Icon size={20} />
-                  <span>{label}</span>
-                </a>
-              ))}
-          </div>
-        )}
       </nav>
     </div>
 
     {/* Support */}
     <div className="p-5 lg:p-6">
       <div className="bg-blue-50 rounded-2xl p-5 border border-blue-100 text-center">
-        <h4 className="text-sm font-bold text-slate-800 mb-2">Need Assistance?</h4>
-        <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-          Our support team is available 24/7 for technical queries.
+        <h4 className="text-sm font-bold text-slate-800 mb-2">Need assistance?</h4>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Please contact your BeFit branch for bookings and any changes to your appointments.
         </p>
-        <button className="w-full bg-white text-blue-600 border border-blue-200 py-2.5 rounded-lg text-sm font-bold shadow-sm hover:bg-blue-50 transition">
-          Contact Support
-        </button>
       </div>
     </div>
   </div>
@@ -104,7 +73,7 @@ const SidebarContent = ({ onNavigate, onClose }) => (
 
 export default function PatientLayout() {
   const navigate = useNavigate();
-  const userName = localStorage.getItem('fullName') || 'Jane';
+  const userName = localStorage.getItem('fullName') || 'Patient';
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -141,9 +110,7 @@ export default function PatientLayout() {
   }, [mobileMenuOpen]);
 
   const handleLogout = () => {
-    // change these keys to whatever you store at login
-    localStorage.removeItem('token');
-    localStorage.removeItem('fullName');
+    localStorage.clear();   // token, role, name, branch - nothing of this patient stays in the browser
     navigate('/login', { replace: true });
   };
 
@@ -190,44 +157,11 @@ export default function PatientLayout() {
               <Menu size={22} />
             </button>
 
-            <div className="hidden md:flex gap-6 lg:gap-8 text-sm font-semibold text-slate-600">
-              {headerItems.map(({ label, icon: Icon }) => (
-                <button key={label} className="flex items-center gap-2 hover:text-blue-600">
-                  <Icon size={18} />
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <p className="md:hidden text-sm font-bold text-slate-800">Patient Dashboard</p>
+            <p className="text-sm font-bold text-slate-800">BeFit Patient Portal</p>
           </div>
 
           {/* Right */}
           <div className="flex items-center gap-3 sm:gap-5">
-            <div className="hidden sm:block relative">
-              <Search
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                size={18}
-              />
-              <input
-                type="text"
-                placeholder="Search records..."
-                className="bg-slate-100 text-sm rounded-full pl-10 pr-4 py-2.5 w-48 lg:w-64 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent transition"
-              />
-            </div>
-
-            <button className="sm:hidden text-slate-500" aria-label="Search">
-              <Search size={21} />
-            </button>
-
-            <button
-              className="relative text-slate-500 hover:text-slate-700 shrink-0"
-              aria-label="Notifications"
-            >
-              <Bell size={21} />
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
-            </button>
-
             {/* Profile dropdown with Logout */}
             <div ref={profileRef} className="relative sm:border-l sm:border-slate-200 sm:pl-5">
               <button
@@ -241,7 +175,7 @@ export default function PatientLayout() {
                 </div>
 
                 <div className="hidden sm:block text-sm text-left">
-                  <p className="font-bold text-slate-800">{userName} Doe</p>
+                  <p className="font-bold text-slate-800">{userName}</p>
                   <p className="text-xs text-slate-500">Patient</p>
                 </div>
 
@@ -259,12 +193,13 @@ export default function PatientLayout() {
                   className="absolute right-0 top-full mt-3 w-56 bg-white rounded-2xl border border-slate-100 shadow-xl py-2 z-50"
                 >
                   <div className="px-4 py-3 border-b border-slate-100">
-                    <p className="text-sm font-bold text-slate-800 truncate">{userName} Doe</p>
+                    <p className="text-sm font-bold text-slate-800 truncate">{userName}</p>
                     <p className="text-xs text-slate-500">Patient</p>
                   </div>
 
                   <button
                     role="menuitem"
+                    onClick={() => { setProfileOpen(false); navigate('/dashboard/profile'); }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
                   >
                     <User size={18} />

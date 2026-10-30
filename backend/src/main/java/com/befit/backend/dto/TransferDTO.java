@@ -30,4 +30,10 @@ public record TransferDTO(Long id, Long patientId, String patientName, String fr
         return new TransferDTO(id, patientId, patientName, fromBranchId, fromBranchName, toBranchId, toBranchName, status, reason,
                 requestedBy, requestedAt, decidedBy, decidedAt, decisionNote, requestedByRole, null, null, null, null);
     }
+
+    /** What a PATIENT may see of their own request: no financial snapshot and no staff e-mail addresses (decision time and note stay). */
+    public TransferDTO forPatient() {
+        return new TransferDTO(id, patientId, patientName, fromBranchId, fromBranchName, toBranchId, toBranchName, status, reason,
+                requestedBy, requestedAt, null, decidedAt, decisionNote, requestedByRole, null, null, null, null);
+    }
 }

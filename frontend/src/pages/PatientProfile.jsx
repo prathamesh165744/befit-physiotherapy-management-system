@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios, { errorMessage } from '../api';
 import { fmtDate, fmtDateTime, money } from '../utils/format';
 import { useNavigate } from 'react-router-dom';
+import { TRANSFER_BADGE, TRANSFER_LABEL, APPOINTMENT_LABEL } from '../utils/patientPortal';
 
 const PatientProfile = () => {
   const [profile, setProfile] = useState(null);
@@ -27,16 +28,22 @@ const PatientProfile = () => {
   const [reason, setReason] = useState('');
   const [branchMsg, setBranchMsg] = useState({ type: '', text: '' });
   const [branchBusy, setBranchBusy] = useState(false);
+  const [extras, setExtras] = useState({ loading: true, error: '' });   // branches, transfers and visit history load after the profile
 
   useEffect(() => {
     fetchMyProfile();
   }, []);
 
   const loadExtras = async () => {
+    setExtras({ loading: true, error: '' });
     try {
       const [b, t, h] = await Promise.all([axios.get('/api/branches'), axios.get('/api/patients/me/transfers'), axios.get('/api/patients/me/history')]);
       setBranches(b.data); setTransfers(t.data); setHistory(h.data);
-    } catch { /* the profile itself still works without these */ }
+      setExtras({ loading: false, error: '' });
+    } catch (err) {
+      // the profile itself still works; say what failed and let the patient retry
+      setExtras({ loading: false, error: await errorMessage(err, 'We could not load your visits and branch requests.') });
+    }
   };
 
   const fetchMyProfile = async () => {
@@ -105,7 +112,7 @@ const PatientProfile = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  if (isLoading) return <div className="flex justify-center items-center h-screen text-slate-500 font-bold">Loading securely...</div>;
+  if (isLoading) return <div role="status" className="flex justify-center items-center h-64 text-slate-500 font-bold">Loading your profile…</div>;
   if (error && !profile) return (
     <div className="p-8 text-center">
       <p className="text-red-500 font-bold mb-4">{error}</p>
@@ -114,11 +121,11 @@ const PatientProfile = () => {
   );
 
   return (
-    <div className="min-h-screen bg-[#f8f9fc] p-8 font-sans">
+    <div className="bg-[#f8f9fc] p-4 sm:p-8 font-sans">
       <div className="max-w-3xl mx-auto">
         
         {/* Header */}
-        <div className="flex justify-between items-end mb-8">
+        <div className="flex flex-wrap justify-between items-end gap-3 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-slate-800">My Medical Profile</h1>
             <p className="text-sm text-slate-500 mt-1">Manage your personal information and contacts</p>
@@ -163,7 +170,7 @@ const PatientProfile = () => {
           <div className="p-8">
             {isEditing ? (
               <form onSubmit={handleUpdate} className="space-y-6">
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Full Name</label>
                     <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} required className="w-full bg-[#f4f7fe] border border-transparent rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:bg-white transition" />
@@ -193,7 +200,7 @@ const PatientProfile = () => {
                 </div>
               </form>
             ) : (
-              <div className="grid grid-cols-2 gap-y-8 gap-x-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-8 gap-x-6">
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</p>
                   <p className="text-slate-800 font-semibold text-lg">{profile?.fullName}</p>
@@ -212,9 +219,9 @@ const PatientProfile = () => {
                 </div>
                 
                 {/* Read-Only System Fields */}
-                <div className="col-span-2 pt-6 border-t border-slate-100">
+                <div className="sm:col-span-2 pt-6 border-t border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800 mb-4">Clinic Information (Read-Only)</h3>
-                  <div className="grid grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div className="bg-slate-50 p-4 rounded-xl">
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Branch</p>
                       <p className="text-slate-700 font-semibold">{profile?.branchName || profile?.branchId || 'N/A'}</p>
@@ -263,12 +270,23 @@ const PatientProfile = () => {
               <button type="submit" disabled={branchBusy || !targetBranch} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-sm font-bold disabled:opacity-50">Request branch change</button>
             </form>
           )}
-          {transfers.length > 0 && (
-            <ul className="mt-5 divide-y divide-slate-100 text-sm">
+          <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-6 mb-1">My branch change requests</h4>
+          {extras.loading ? (
+            <p role="status" className="text-sm text-slate-400 py-2">Loading…</p>
+          ) : transfers.length === 0 ? (
+            <p data-testid="no-transfers" className="text-sm text-slate-400 py-2">You have not requested a branch change yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100 text-sm">
               {transfers.map((t) => (
-                <li key={t.id} className="py-2 flex flex-wrap justify-between gap-2">
-                  <span>{t.fromBranchName} → <b>{t.toBranchName}</b></span>
-                  <span className="text-slate-500">{t.status} • {fmtDate(t.requestedAt)}{t.decisionNote ? ` • “${t.decisionNote}”` : ''}</span>
+                <li key={t.id} className="py-3 flex flex-wrap justify-between gap-2">
+                  <span>{t.fromBranchName} → <b>{t.toBranchName}</b>
+                    <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${TRANSFER_BADGE[t.status]}`}>{TRANSFER_LABEL[t.status] || t.status}</span>
+                  </span>
+                  <span className="text-slate-500">
+                    Requested {fmtDate(t.requestedAt)}
+                    {t.decidedAt ? ` · decided ${fmtDate(t.decidedAt)}` : ''}
+                    {t.decisionNote ? ` · “${t.decisionNote}”` : ''}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -276,6 +294,12 @@ const PatientProfile = () => {
         </div>
 
         {/* History across branches */}
+        {extras.error && (
+          <div role="alert" className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-6 mt-8 text-sm font-semibold flex flex-wrap justify-between items-center gap-3">
+            <span>{extras.error}</span>
+            <button onClick={loadExtras} className="bg-white border border-red-200 px-4 py-2 rounded-lg text-red-700 font-bold">Try again</button>
+          </div>
+        )}
         {history && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 mt-8">
             <h3 className="text-sm font-bold text-slate-800 mb-4">My Visits & Invoices (all branches)</h3>
@@ -284,7 +308,7 @@ const PatientProfile = () => {
                 <thead className="text-[10px] uppercase font-bold text-slate-400"><tr><th className="py-2 pr-4">Date</th><th className="py-2 pr-4">Branch</th><th className="py-2 pr-4">Visit</th><th className="py-2">Status</th></tr></thead>
                 <tbody className="divide-y divide-slate-100">
                   {history.appointments.length === 0 && <tr><td colSpan="4" className="py-4 text-slate-400">No visits yet.</td></tr>}
-                  {history.appointments.map((a) => <tr key={a.id}><td className="py-2 pr-4">{fmtDateTime(a.appointmentDate)}</td><td className="py-2 pr-4">{a.branchName || a.branchId}</td><td className="py-2 pr-4">{a.caseType} • {a.doctorName}</td><td className="py-2 font-semibold">{a.status}</td></tr>)}
+                  {history.appointments.map((a) => <tr key={a.id}><td className="py-2 pr-4">{fmtDateTime(a.appointmentDate)}</td><td className="py-2 pr-4">{a.branchName || a.branchId}</td><td className="py-2 pr-4">{a.caseType} • {a.doctorName}</td><td className="py-2 font-semibold">{APPOINTMENT_LABEL[a.status] || a.status}</td></tr>)}
                 </tbody>
               </table>
             </div>
