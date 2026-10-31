@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios, { errorMessage, branchForCreate } from '../../api';
 import CrossBranchPatientSearchModal from './CrossBranchPatientSearchModal';
+import PortalAccessPanel from '../patients/PortalAccessPanel';
 
 const EMPTY = { fullName: '', phone: '', gender: 'M', dateOfBirth: '', emergencyContact: '' };
 
@@ -10,14 +11,40 @@ const RegisterPatientModal = ({ isOpen, onClose, onSuccess, initialValues }) => 
   const [error, setError] = useState('');
   const [duplicate, setDuplicate] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [registered, setRegistered] = useState(null);   // { id, fullName } after a successful registration: step 2 = portal access
   const canSearch = ['ADMIN', 'RECEPTIONIST'].includes(localStorage.getItem('role'));
 
   // Pre-fill when opened from the search modal ("no match - register new patient")
   useEffect(() => {
-    if (isOpen) { setFormData({ ...EMPTY, ...(initialValues || {}) }); setError(''); setDuplicate(false); }
+    if (isOpen) { setFormData({ ...EMPTY, ...(initialValues || {}) }); setError(''); setDuplicate(false); setRegistered(null); }
   }, [isOpen, initialValues]);
 
   if (!isOpen) return null;
+
+  const finish = () => { setRegistered(null); onSuccess(); };
+
+  if (registered) {
+    return (
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div role="dialog" aria-label="Patient registered" className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+          <div className="p-6 border-b border-slate-100 bg-[#f8f9fc]">
+            <h2 className="text-lg font-bold text-slate-800">Patient registered</h2>
+            <p data-testid="registered-name" className="text-[13px] text-slate-500 mt-1"><b>{registered.fullName}</b>{registered.regId ? ` · ${registered.regId}` : ''}</p>
+          </div>
+          <div className="p-6 space-y-4">
+            <p className="text-[13px] text-slate-600">
+              No login has been created. If the patient wants to use the patient portal, create an activation link and hand it to them:
+              they choose their own email and password.
+            </p>
+            <PortalAccessPanel patientId={registered.id} status="NONE" canManage />
+          </div>
+          <div className="p-4 border-t border-slate-100 flex justify-end">
+            <button type="button" onClick={finish} className="bg-[#2563eb] hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-[13px] font-bold">Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,10 +59,10 @@ const RegisterPatientModal = ({ isOpen, onClose, onSuccess, initialValues }) => 
 
     try {
       // The patient is registered at the receptionist's own branch - decided by the server, not by this form.
-      await axios.post('/api/patients', payload);
-      alert("Patient registered successfully!");
+      const res = await axios.post('/api/patients', payload);
+      // Registration never creates a login or a password. Step 2 lets staff give the patient an activation link (optional).
+      setRegistered({ id: res.data.id, fullName: res.data.fullName, regId: res.data.regId });
       setFormData({ ...EMPTY });
-      onSuccess();
     } catch (err) {
       // 409 DUPLICATE_PATIENT: the server found this person already registered (possibly at another branch)
       if (err.response?.status === 409 && err.response?.data?.code === 'DUPLICATE_PATIENT') setDuplicate(true);

@@ -3,6 +3,8 @@ package com.befit.backend.service;
 import com.befit.backend.dto.*;
 import com.befit.backend.entity.Patient;
 import com.befit.backend.entity.PatientBranchHistory;
+import com.befit.backend.entity.PatientInvitation;
+import com.befit.backend.repository.PatientInvitationRepository;
 import com.befit.backend.entity.Role;
 import com.befit.backend.exception.ApiException;
 import com.befit.backend.repository.*;
@@ -41,11 +43,13 @@ public class PatientService {
     private final BranchService branchService;
     private final TransferService transferService;
     private final BranchAccess access;
+    private final PatientInvitationRepository invitationRepository;
 
     public PatientService(PatientRepository patientRepository, PatientBranchHistoryRepository historyRepository,
                           AppointmentRepository appointmentRepository, BillRepository billRepository,
                           BranchRepository branchRepository, BranchService branchService,
-                          TransferService transferService, BranchAccess access) {
+                          TransferService transferService, BranchAccess access,
+                          PatientInvitationRepository invitationRepository) {
         this.patientRepository = patientRepository;
         this.historyRepository = historyRepository;
         this.appointmentRepository = appointmentRepository;
@@ -54,6 +58,7 @@ public class PatientService {
         this.branchService = branchService;
         this.transferService = transferService;
         this.access = access;
+        this.invitationRepository = invitationRepository;
     }
 
     // ------------------------------------------------------------------ staff
@@ -74,7 +79,12 @@ public class PatientService {
                 ? patientRepository.searchCurrentOrPast(ids, pattern, pageable)
                 : patientRepository.searchCurrent(ids, pattern, pageable);
         Map<String, String> names = branchService.nameMap();
-        return PageResponse.of(result, p -> PatientSummaryDTO.of(p, names.get(p.getBranchId())));
+        // Portal access for the whole page with ONE query: ACTIVE = has a login, INVITED = live activation link, NONE.
+        List<Long> noLogin = result.getContent().stream().filter(p -> p.getUser() == null).map(Patient::getId).toList();
+        java.util.Set<Long> invited = noLogin.isEmpty() ? java.util.Set.of()
+                : new java.util.HashSet<>(invitationRepository.activeInvitedPatientIds(noLogin, java.time.LocalDateTime.now()));
+        return PageResponse.of(result, p -> PatientSummaryDTO.of(p, names.get(p.getBranchId()),
+                p.getUser() != null ? PatientSummaryDTO.ACTIVE : invited.contains(p.getId()) ? PatientSummaryDTO.INVITED : PatientSummaryDTO.NONE));
     }
 
     /** Small, capped list for dropdowns (e.g. choosing a patient when booking an appointment). Current patients only. */
@@ -98,7 +108,12 @@ public class PatientService {
             log.info("Limited patient profile viewed by {} (branch {}): patient={}, access={}", user.email(), user.branchId(), p.getId(), level);
             return PatientProfileDTO.limited(p, branchService.nameMap().get(p.getBranchId()), level.name());
         }
-        return toProfile(p, PatientProfileDTO.FULL);
+        // Full view: staff also see whether the patient can use the portal (and until when an open activation link works).
+        var invite = p.getUser() != null ? java.util.Optional.<PatientInvitation>empty()
+                : invitationRepository.findActive(p.getId(), java.time.LocalDateTime.now()).stream().findFirst();
+        String portal = p.getUser() != null ? PatientSummaryDTO.ACTIVE : invite.isPresent() ? PatientSummaryDTO.INVITED : PatientSummaryDTO.NONE;
+        return PatientProfileDTO.of(p, branchService.nameMap().get(p.getBranchId()), transferService.pendingFor(p), PatientProfileDTO.FULL,
+                portal, invite.map(PatientInvitation::getExpiresAt).orElse(null));
     }
 
     /**
@@ -234,14 +249,10 @@ public class PatientService {
      * Only ADMIN / RECEPTIONIST are told who and where; anyone else gets a generic message.
      */
     private void rejectDuplicate(AuthUser user, String fullName, String phone, LocalDate dob) {
-        String name = normalizeName(fullName);
-        List<Patient> dups = patientRepository.findByNameAndPhonePattern(name, phonePattern(digitsOf(phone)), PageRequest.of(0, 1));
-        if (dups.isEmpty() && dob != null) {
-            dups = patientRepository.findByNameAndDob(name, dob, PageRequest.of(0, 1));
-        }
-        if (dups.isEmpty()) return;
+        var found = findDuplicate(fullName, phone, dob);
+        if (found.isEmpty()) return;
 
-        Patient existing = dups.get(0);
+        Patient existing = found.get();
         boolean mayKnow = user.role() == Role.ADMIN || user.role() == Role.RECEPTIONIST;
         if (!mayKnow) {
             throw ApiException.conflict("DUPLICATE_PATIENT", "This patient is already registered. A new registration cannot be created.");
@@ -251,6 +262,20 @@ public class PatientService {
         throw ApiException.conflict("DUPLICATE_PATIENT", "This patient is already registered as REG-" + existing.getId()
                 + (here ? " at your branch." : " at " + (branch == null ? "another branch" : branch) + ".")
                 + " Please search for the existing patient instead of creating a new registration.");
+    }
+
+    /**
+     * The existing patient (any branch) with the same full name + phone number, or the same full name + date of birth.
+     * One rule for every way of creating a patient: staff registration and online self-registration.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Patient> findDuplicate(String fullName, String phone, LocalDate dob) {
+        String name = normalizeName(fullName);
+        List<Patient> dups = patientRepository.findByNameAndPhonePattern(name, phonePattern(digitsOf(phone)), PageRequest.of(0, 1));
+        if (dups.isEmpty() && dob != null) {
+            dups = patientRepository.findByNameAndDob(name, dob, PageRequest.of(0, 1));
+        }
+        return dups.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(dups.get(0));
     }
 
     private static Long parseRegId(String regId) {

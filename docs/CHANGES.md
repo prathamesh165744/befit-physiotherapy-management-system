@@ -216,3 +216,24 @@ Privacy: patients no longer receive staff e-mail addresses (branch-move `authori
 Frontend: `PatientDashboard.jsx` was static mock data; it now loads the real profile, upcoming/next appointment (with its branch, marking visits away from the patient's branch), visit history of all branches and the latest transfer status, with loading / error+retry / empty states. `PatientProfile.jsx` gets loading, error+retry and empty states for visits and branch-change requests, status badges and decision details. `PatientLayout.jsx`: working Dashboard / My Profile links, real name (the fake "Doe"/"Jane" is gone), full logout (`localStorage.clear()`), fake search / notification / "24/7 support" items removed.
 
 Tests: backend `PatientSelfServiceTest`; frontend (Vitest + Testing Library) `patientPortal.test.js`, `PatientDashboard.test.jsx`, `PatientProfile.test.jsx`. One-time setup: `npm install -D vitest jsdom @testing-library/react @testing-library/user-event @testing-library/jest-dom`, then `npm test`.
+
+## BEFIT-32 – Walk-in patient account / self-service decision
+
+**Decision (business rule): staff registration never creates a login or a password. Portal access is by a one-time, expiring activation link that the patient redeems themselves.**
+
+| State | Meaning | Shown to staff as |
+|---|---|---|
+| NONE | Registered by staff, no login (default for every walk-in) | "No portal access" |
+| INVITED | A live activation link exists (not used, not revoked, not expired) | "Invitation sent · valid until …" |
+| ACTIVE | The patient has a login (self-registered, or activated a link) | "Portal access: active" |
+
+Flow
+1. Front desk registers the patient (`POST /api/patients`) - **no `users` row, no credentials**. The registration dialog then offers (optional) step 2: *Create activation link*.
+2. `POST /api/patients/{id}/portal-invitation` (ADMIN, or RECEPTIONIST of the patient's own branch; doctors, managers, other branches, patients → 403; patient already has a login → 409) returns `{ token, activationPath: "/activate#t=<token>", expiresAt }`. The token is 256 random bits, valid `befit.portal.invitation-hours` (default 48 h), and **only its SHA-256 hash is stored**, so it is shown once and cannot be recovered. A new link cancels the previous one; `DELETE /api/patients/{id}/portal-invitation` cancels it. Staff hand the link to the patient in person (the system has no e-mail sending).
+3. The patient opens `/activate#t=…` (the token is in the URL *fragment*, which browsers never send to servers or logs), `POST /api/auth/invitations/check` answers only `{valid, firstName}`, then `POST /api/auth/activate {token,email,password}` creates the login (role PATIENT, password chosen by the patient and BCrypt-encoded by the existing `PasswordEncoder`) and attaches it to the **existing** patient profile. The invitation row is locked while redeeming, so a link works once. Every failure (unknown / used / revoked / expired) returns the same message. Activation does not sign anyone in: the patient logs in through the normal `/api/auth/login`, and every `/api/patients/me/**` call still needs the JWT.
+
+Duplicates: online self-registration (`UserService.registerPatient`) now uses the same name + phone / name + date-of-birth rule as the front desk (`PatientService.findDuplicate`) and answers `DUPLICATE_PATIENT` ("ask your branch for an activation link") instead of creating a second profile; login-email uniqueness is case-insensitive.
+
+Staff visibility: `portalAccess` on the patient directory rows (one query per page), and on the full staff profile (with `portalInviteExpiresAt`) where the *Patient portal* card manages the link. Limited cross-branch views do not show it.
+
+Not changed (outside this ticket): the demo seed accounts in `DataSeeder` / `DemoDataSeeder` still use fixed demo passwords - replace them before any real deployment.

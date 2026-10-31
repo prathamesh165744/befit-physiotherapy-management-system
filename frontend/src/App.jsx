@@ -17,6 +17,7 @@ import AppointmentsList from './pages/AppointmentsList';
 import History from './pages/History';
 import TransferRequests from './pages/TransferRequests';
 import OutgoingTransfers from './pages/OutgoingTransfers';
+import ActivateAccount from './pages/ActivateAccount';
 
 // Branch managers only work with transfers; the dashboard / patient / billing data is not theirs, so send them straight there.
 function StaffHome() {
@@ -30,6 +31,7 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/activate" element={<ActivateAccount />} />
 
         {/* PATIENT area: one layout (sidebar + header) shared by both pages */}
         <Route
