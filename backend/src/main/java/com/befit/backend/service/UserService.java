@@ -28,6 +28,7 @@ public class UserService {
     @Autowired private PatientRepository patientRepository;
     @Autowired private BranchRepository branchRepository;
     @Autowired private PatientBranchHistoryRepository historyRepository;
+    @Autowired private PatientService patientService;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private JwtUtil jwtUtil;
 
@@ -39,8 +40,14 @@ public class UserService {
      */
     @Transactional
     public User registerPatient(RegisterRequest request) {
-        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+        if (userRepository.existsByEmailIgnoreCase(request.getEmail().trim())) {
             throw ApiException.conflict("EMAIL_EXISTS", "An account with this email already exists.");
+        }
+        // Someone the clinic already registered (e.g. a walk-in) must not get a SECOND profile by signing up online. Nothing about
+        // the existing profile is revealed; the clinic can hand them an activation link that attaches a login to it.
+        if (patientService.findDuplicate(request.getFullName(), request.getPhone(), request.getDob()).isPresent()) {
+            throw ApiException.conflict("DUPLICATE_PATIENT", "You may already be registered with BeFit. "
+                    + "Please ask your branch for an activation link instead of creating a new account.");
         }
         String branchId = (request.getBranchId() != null && !request.getBranchId().isBlank())
                 ? request.getBranchId() : "KARVE-ROAD";

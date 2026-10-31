@@ -1,3 +1,4 @@
+import { PORTAL_BADGE } from '../components/patients/PortalAccessPanel';
 import React, { useState, useEffect, useCallback } from 'react';
 import axios, { errorMessage } from '../api';
 import { Link } from 'react-router-dom';
@@ -83,14 +84,15 @@ const PatientsDirectory = () => {
                   <th className="px-6 py-4">GENDER / DOB</th>
                   <th className="px-6 py-4">BRANCH</th>
                   <th className="px-6 py-4">REGISTERED</th>
+                  <th className="px-6 py-4">PORTAL</th>
                   <th className="px-6 py-4 text-right">ACTION</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
-                  <tr><td colSpan="7" className="text-center py-10 text-slate-400 font-medium">Loading patients...</td></tr>
+                  <tr><td colSpan="8" className="text-center py-10 text-slate-400 font-medium">Loading patients...</td></tr>
                 ) : data.items.length === 0 ? (
-                  <tr><td colSpan="7" className="text-center py-10 text-slate-400 font-medium">No patients found.</td></tr>
+                  <tr><td colSpan="8" className="text-center py-10 text-slate-400 font-medium">No patients found.</td></tr>
                 ) : (
                   data.items.map((patient) => {
                     const movedAway = scope === 'all' && myBranch && localStorage.getItem('role') !== 'ADMIN' && patient.branchId !== myBranch;
@@ -110,6 +112,7 @@ const PatientsDirectory = () => {
                           {movedAway && <span className="ml-2 text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100 rounded px-1.5 py-0.5">moved</span>}
                         </td>
                         <td className="px-6 py-4 text-slate-500">{fmtDate(patient?.registrationDate)}</td>
+                        <td className="px-6 py-4"><span data-testid="portal-badge" className={`text-[9px] font-bold px-2 py-1 rounded border uppercase ${PORTAL_BADGE[patient?.portalAccess] || PORTAL_BADGE.NONE}`}>{{ ACTIVE: 'Active', INVITED: 'Invited', NONE: 'None' }[patient?.portalAccess] || 'None'}</span></td>
                         <td className="px-6 py-4 text-right">
                           <Link to={`/staff-dashboard/patients/${patient.id}`}
                             className="text-blue-600 hover:text-blue-800 font-bold transition text-xs flex items-center justify-end gap-1">

@@ -3,6 +3,7 @@ package com.befit.backend.dto;
 import com.befit.backend.entity.Patient;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  * Profile of one patient. Never contains the login row / password hash.
@@ -14,16 +15,24 @@ import java.time.LocalDate;
 public record PatientProfileDTO(Long id, String regId, String fullName, String phone, String gender, LocalDate dateOfBirth,
                                 String address, String emergencyContact, String emergencyContactName, String bloodGroup,
                                 String occupation, String medicalHistory, LocalDate registrationDate,
-                                String branchId, String branchName, TransferDTO pendingTransfer, String accessLevel) {
+                                String branchId, String branchName, TransferDTO pendingTransfer, String accessLevel,
+                                String portalAccess, LocalDateTime portalInviteExpiresAt) {
 
     public static final String SELF = "SELF";
     public static final String FULL = "FULL";
 
     /** Full profile (the patient themself, home-branch staff, admins). */
     public static PatientProfileDTO of(Patient p, String branchName, TransferDTO pending, String accessLevel) {
+        return of(p, branchName, pending, accessLevel, p.getUser() != null ? PatientSummaryDTO.ACTIVE : PatientSummaryDTO.NONE, null);
+    }
+
+    /** Full profile with the portal-access state staff need (ACTIVE / INVITED until portalInviteExpiresAt / NONE). */
+    public static PatientProfileDTO of(Patient p, String branchName, TransferDTO pending, String accessLevel,
+                                       String portalAccess, LocalDateTime portalInviteExpiresAt) {
         return new PatientProfileDTO(p.getId(), "REG-" + p.getId(), p.getFullName(), p.getPhone(), p.getGender(),
                 p.getDateOfBirth(), p.getAddress(), p.getEmergencyContact(), p.getEmergencyContactName(), p.getBloodGroup(),
-                p.getOccupation(), p.getMedicalHistory(), p.getRegistrationDate(), p.getBranchId(), branchName, pending, accessLevel);
+                p.getOccupation(), p.getMedicalHistory(), p.getRegistrationDate(), p.getBranchId(), branchName, pending, accessLevel,
+                portalAccess, portalInviteExpiresAt);
     }
 
     /**
@@ -34,6 +43,6 @@ public record PatientProfileDTO(Long id, String regId, String fullName, String p
     public static PatientProfileDTO limited(Patient p, String homeBranchName, String accessLevel) {
         return new PatientProfileDTO(p.getId(), "REG-" + p.getId(), p.getFullName(), CrossBranchPatientDTO.maskPhone(p.getPhone()),
                 p.getGender(), p.getDateOfBirth(), null, null, null, null, null, null, null,
-                p.getBranchId(), homeBranchName, null, accessLevel);
+                p.getBranchId(), homeBranchName, null, accessLevel, null, null);
     }
 }

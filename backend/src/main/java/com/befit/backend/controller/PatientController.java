@@ -3,6 +3,7 @@ package com.befit.backend.controller;
 import com.befit.backend.dto.*;
 import com.befit.backend.security.BranchAccess;
 import com.befit.backend.service.PatientService;
+import com.befit.backend.service.PortalAccessService;
 import com.befit.backend.service.TransferService;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -19,11 +20,13 @@ public class PatientController {
     private final PatientService patientService;
     private final TransferService transferService;
     private final BranchAccess access;
+    private final PortalAccessService portalAccessService;
 
-    public PatientController(PatientService patientService, TransferService transferService, BranchAccess access) {
+    public PatientController(PatientService patientService, TransferService transferService, BranchAccess access, PortalAccessService portalAccessService) {
         this.patientService = patientService;
         this.transferService = transferService;
         this.access = access;
+        this.portalAccessService = portalAccessService;
     }
 
     // ---------------------------------------------------------------- staff (ADMIN / DOCTOR / RECEPTIONIST)
@@ -38,6 +41,22 @@ public class PatientController {
                                                 @RequestParam(defaultValue = "id") String sort,
                                                 @RequestParam(defaultValue = "desc") String dir) {
         return patientService.list(access.current(), branchId, scope, q, page, size, sort, dir);
+    }
+
+    /**
+     * Gives a patient registered at the front desk a one-time, expiring activation link (ADMIN / RECEPTIONIST of the
+     * patient's own branch). The secret is in the response ONCE; it is not stored and cannot be shown again.
+     */
+    @PostMapping("/{id}/portal-invitation")
+    public PortalInvitationDTO createPortalInvitation(@PathVariable Long id) {
+        return portalAccessService.issue(access.current(), id);
+    }
+
+    /** Cancels the patient's open activation link. */
+    @DeleteMapping("/{id}/portal-invitation")
+    public ResponseEntity<Void> revokePortalInvitation(@PathVariable Long id) {
+        portalAccessService.revoke(access.current(), id);
+        return ResponseEntity.noContent().build();
     }
 
     /** Dropdown list (id, name, phone) of current patients - used by the New Appointment form. */

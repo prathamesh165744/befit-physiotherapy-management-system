@@ -4,6 +4,7 @@ import axios, { errorMessage, classifyError, branchForCreate } from '../api';
 import StaffLayout from '../layouts/StaffLayout';
 import InvoicePreviewModal from '../components/billing/InvoicePreviewModal';
 import NewAppointmentModal from '../components/modals/NewAppointmentModal';
+import PortalAccessPanel from '../components/patients/PortalAccessPanel';
 import { fmtDate, fmtDateTime, money, STATUS_BADGE } from '../utils/format';
 
 /**
@@ -154,6 +155,14 @@ export default function StaffPatientProfile() {
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{profile.medicalHistory || 'No medical history recorded.'}</p>
           </div>
         </div>
+        )}
+
+        {!limited && profile.portalAccess && (
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mt-6">
+            <h2 className="text-sm font-bold text-slate-800 mb-3">Patient portal</h2>
+            <PortalAccessPanel patientId={profile.id} status={profile.portalAccess} inviteExpiresAt={profile.portalInviteExpiresAt}
+              canManage={['ADMIN', 'RECEPTIONIST'].includes(role)} onChanged={load} />
+          </div>
         )}
 
         {!limited && <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mt-6">
