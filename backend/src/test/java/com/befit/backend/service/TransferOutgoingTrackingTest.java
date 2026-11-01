@@ -37,7 +37,7 @@ class TransferOutgoingTrackingTest {
         BillRepository bills = mock(BillRepository.class);
         PatientBranchHistoryRepository history = mock(PatientBranchHistoryRepository.class);
         BranchAccess access = new BranchAccess(branches, appointments, bills, history, 3);
-        service = new TransferService(patients, history, transfers, appointments, bills, branchService, access, true, false, false, true);
+        service = new TransferService(patients, history, transfers, appointments, bills, branchService, access, true, false, false, true, mock(NotificationService.class));
 
         Patient p = new Patient();
         p.setId(7L); p.setFullName("Asha Kulkarni"); p.setBranchId("A");

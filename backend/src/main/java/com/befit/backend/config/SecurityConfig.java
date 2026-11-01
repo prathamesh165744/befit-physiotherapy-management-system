@@ -86,6 +86,9 @@ public class SecurityConfig {
                     "/api/patients/cross-branch-search"
                 ).hasAnyRole("ADMIN", "RECEPTIONIST")
 
+                // Notifications: every logged-in user, but only their own (the service always filters by the caller's id)
+                .requestMatchers("/api/notifications/**").authenticated()
+
                 // Creating a branch manager account: administrators only
                 .requestMatchers(HttpMethod.POST, "/api/staff/managers").hasRole("ADMIN")
 

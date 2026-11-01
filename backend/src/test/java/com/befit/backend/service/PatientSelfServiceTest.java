@@ -47,7 +47,7 @@ class PatientSelfServiceTest {
         transfers = mock(BranchTransferRequestRepository.class);
         branchService = mock(BranchService.class);
         BranchAccess access = new BranchAccess(branches, appointments, bills, history, 3);
-        transferService = new TransferService(patients, history, transfers, appointments, bills, branchService, access, true, false, false, true);
+        transferService = new TransferService(patients, history, transfers, appointments, bills, branchService, access, true, false, false, true, mock(NotificationService.class));
         service = new PatientService(patients, history, appointments, bills, branches, branchService, transferService, access, mock(PatientInvitationRepository.class));
 
         asha = patient(7L, "Asha Kulkarni", "A");

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, NavLink } from 'react-router-dom';
+import NotificationBell from '../components/notifications/NotificationBell';
 import {
   LayoutDashboard,
   User,
@@ -162,6 +163,8 @@ export default function PatientLayout() {
 
           {/* Right */}
           <div className="flex items-center gap-3 sm:gap-5">
+            <NotificationBell />
+
             {/* Profile dropdown with Logout */}
             <div ref={profileRef} className="relative sm:border-l sm:border-slate-200 sm:pl-5">
               <button

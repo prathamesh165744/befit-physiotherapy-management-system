@@ -46,7 +46,7 @@ class TransferServiceTest {
         bills = mock(BillRepository.class);
         branchService = mock(BranchService.class);
         BranchAccess access = new BranchAccess(mock(BranchRepository.class), appointments, bills, history, 3);
-        service = new TransferService(patients, history, transfers, appointments, bills, branchService, access, true, blockOnInvoices, allowSelfApproval, false);
+        service = new TransferService(patients, history, transfers, appointments, bills, branchService, access, true, blockOnInvoices, allowSelfApproval, false, mock(NotificationService.class));
 
         patient = new Patient();
         patient.setId(7L); patient.setFullName("Asha Kulkarni"); patient.setBranchId("A");
@@ -422,7 +422,7 @@ class TransferServiceTest {
     @Test void autoApplyOfAPatientRequestNeverHappensWhenMoneyIsDue() {
         // approval switched off, but there is an unpaid invoice -> must wait for a person
         service = new TransferService(patients, history, transfers, appointments, bills, branchService,
-                new BranchAccess(mock(BranchRepository.class), appointments, bills, history, 3), false, false, false, false);
+                new BranchAccess(mock(BranchRepository.class), appointments, bills, history, 3), false, false, false, false, mock(NotificationService.class));
         Patient owner = patient;
         owner.setUser(new User());
         when(patients.findByUserEmail("pat@x.test")).thenReturn(Optional.of(owner));
