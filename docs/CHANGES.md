@@ -237,3 +237,26 @@ Duplicates: online self-registration (`UserService.registerPatient`) now uses th
 Staff visibility: `portalAccess` on the patient directory rows (one query per page), and on the full staff profile (with `portalInviteExpiresAt`) where the *Patient portal* card manages the link. Limited cross-branch views do not show it.
 
 Not changed (outside this ticket): the demo seed accounts in `DataSeeder` / `DemoDataSeeder` still use fixed demo passwords - replace them before any real deployment.
+
+## BEFIT-33 – Notifications
+
+**What** In-app notifications for branch-transfer workflow events, replacing the bell placeholder (`alert("No new notifications")`) in `StaffLayout.jsx`; the same bell is in the patient portal header.
+
+| Event | Who is notified (each person once, only active accounts, never the person who caused it) |
+|---|---|
+| `TRANSFER_REQUESTED` | Everyone who can decide it: admins, the destination branch's `BRANCH_MANAGER`s, and the destination receptionists only while `befit.transfer.manager-approval-required=false` |
+| `TRANSFER_APPROVED` / `TRANSFER_REJECTED` | Whoever raised the request, the patient (if they have a portal login, in first-person wording and without staff names), the source branch's managers |
+| `TRANSFER_CANCELLED` | The deciders, whoever raised the request, the patient |
+
+Further workflow events are added by a new `NotificationType` value plus a producer method in `NotificationService`.
+
+**Model** `notifications(id, recipient_user_id, type, message, related_type, related_id, created_at, read_at)`; unread = `read_at IS NULL`. The message is written when the event happens and contains no financial data.
+
+**API** (any logged-in role; the user always comes from the token, there is no user id in any URL or body)
+`GET /api/notifications?unreadOnly=&limit=` (newest first, limit 1-100, default 30) · `GET /api/notifications/unread-count` · `POST /api/notifications/{id}/read` · `POST /api/notifications/read-all`.
+
+**Security** Every repository query is keyed by the caller's id (`findByIdAndRecipientUserId`, `markAllRead(userId)`), so another user's notification is reported as 404 and can neither be read nor changed. The `link` in each notification is worked out per viewer when it is read, from the same rules as the transfer screens: admin → Transfers; manager/receptionist of the destination → Transfers; of the source branch → Outgoing; a patient → their profile only for their own request; anyone else (other branches, doctors, branch-less staff) gets `link = null` and the UI shows plain text.
+
+**Reliability** Notifications are created after the transfer's transaction commits, in their own transaction; a failure is logged and never undoes or blocks the transfer.
+
+**Frontend** `NotificationBell` (badge polled every 30 s, list on open, read/unread styling, mark one / all read, loading / empty / error states, Escape and outside-click to close).

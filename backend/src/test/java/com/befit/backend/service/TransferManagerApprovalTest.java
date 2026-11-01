@@ -48,7 +48,7 @@ class TransferManagerApprovalTest {
         branches = mock(BranchRepository.class);
         access = new BranchAccess(branches, appointments, bills, history, 3);
         service = new TransferService(patients, history, transfers, appointments, bills, branchService, access,
-                true, false, false, managerApprovalRequired);
+                true, false, false, managerApprovalRequired, mock(NotificationService.class));
 
         patient = new Patient();
         patient.setId(7L); patient.setFullName("Asha Kulkarni"); patient.setBranchId("A");

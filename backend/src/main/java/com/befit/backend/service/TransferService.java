@@ -83,6 +83,7 @@ public class TransferService {
     private final boolean blockOnOutstandingInvoices;
     private final boolean allowSelfApproval;
     private final boolean managerApprovalRequired;
+    private final NotificationService notifications;
 
     public TransferService(PatientRepository patientRepository, PatientBranchHistoryRepository historyRepository,
                            BranchTransferRequestRepository transferRepository, AppointmentRepository appointmentRepository,
@@ -90,7 +91,8 @@ public class TransferService {
                            @Value("${befit.transfer.approval-required:true}") boolean approvalRequired,
                            @Value("${befit.transfer.block-on-outstanding-invoices:false}") boolean blockOnOutstandingInvoices,
                            @Value("${befit.transfer.allow-self-approval:false}") boolean allowSelfApproval,
-                           @Value("${befit.transfer.manager-approval-required:true}") boolean managerApprovalRequired) {
+                           @Value("${befit.transfer.manager-approval-required:true}") boolean managerApprovalRequired,
+                           NotificationService notifications) {
         this.patientRepository = patientRepository;
         this.historyRepository = historyRepository;
         this.transferRepository = transferRepository;
@@ -102,6 +104,7 @@ public class TransferService {
         this.blockOnOutstandingInvoices = blockOnOutstandingInvoices;
         this.allowSelfApproval = allowSelfApproval;
         this.managerApprovalRequired = managerApprovalRequired;
+        this.notifications = notifications;
     }
 
     // ------------------------------------------------------------------ patient side
@@ -125,7 +128,9 @@ public class TransferService {
         BranchTransferRequest t = transferRepository.findFirstByPatientIdAndStatus(p.getId(), TransferStatus.PENDING)
                 .orElseThrow(() -> ApiException.notFound("You have no pending transfer request."));
         close(t, TransferStatus.CANCELLED, user, "Cancelled by the patient", null);
-        return toDto(transferRepository.save(t), p.getFullName(), branchService.nameMap()).forPatient();
+        BranchTransferRequest saved = transferRepository.save(t);
+        notifications.transferCancelled(saved, p, user);
+        return toDto(saved, p.getFullName(), branchService.nameMap()).forPatient();
     }
 
     // ------------------------------------------------------------------ staff side
@@ -218,7 +223,9 @@ public class TransferService {
         log.info("Transfer {} APPROVED by {} ({}): patient={} {} -> {}, warnings={}, outstanding={} on {} invoice(s)", t.getId(), user.email(), user.role(),
                 p.getId(), t.getFromBranchId(), t.getToBranchId(), warnings == null ? "none" : "acknowledged",
                 v.outstandingAmount().toPlainString(), v.outstandingInvoices());
-        return toDto(transferRepository.save(t), p.getFullName(), branchService.nameMap());
+        BranchTransferRequest saved = transferRepository.save(t);
+        notifications.transferDecided(saved, p, user);
+        return toDto(saved, p.getFullName(), branchService.nameMap());
     }
 
     @Transactional
@@ -228,7 +235,9 @@ public class TransferService {
         close(t, TransferStatus.REJECTED, user, blankToNull(note), null);   // the patient's branch is not touched
         log.info("Transfer {} REJECTED by {} ({}): patient={} {} -> {}", t.getId(), user.email(), user.role(),
                 t.getPatientId(), t.getFromBranchId(), t.getToBranchId());
-        return toDto(transferRepository.save(t), p == null ? null : p.getFullName(), branchService.nameMap());
+        BranchTransferRequest saved = transferRepository.save(t);
+        notifications.transferDecided(saved, p, user);
+        return toDto(saved, p == null ? null : p.getFullName(), branchService.nameMap());
     }
 
     /** Withdraw a pending request: ADMIN, or a receptionist of the source or destination branch. */
@@ -243,7 +252,9 @@ public class TransferService {
         Patient p = patientRepository.findById(t.getPatientId()).orElse(null);
         close(t, TransferStatus.CANCELLED, user, blankToNull(note) == null ? "Cancelled by staff" : note.trim(), null);
         log.info("Transfer {} CANCELLED by {} ({}): patient={}", t.getId(), user.email(), user.role(), t.getPatientId());
-        return toDto(transferRepository.save(t), p == null ? null : p.getFullName(), branchService.nameMap());
+        BranchTransferRequest saved = transferRepository.save(t);
+        notifications.transferCancelled(saved, p, user);
+        return toDto(saved, p == null ? null : p.getFullName(), branchService.nameMap());
     }
 
     /** Administrator moves a patient directly (also covers walk-in patients who have no login). Same rules as an approval. */
@@ -381,6 +392,7 @@ public class TransferService {
         BranchTransferRequest saved = transferRepository.save(t);
         log.info("Transfer {} {} by {} ({}): patient={} {} -> {}", saved.getId(), immediate ? "APPLIED" : "REQUESTED",
                 actor.email(), actor.role(), p.getId(), saved.getFromBranchId(), saved.getToBranchId());
+        if (immediate) notifications.transferDecided(saved, p, actor); else notifications.transferRequested(saved, p, actor);
         return toDto(saved, p.getFullName(), branchService.nameMap());
     }
 

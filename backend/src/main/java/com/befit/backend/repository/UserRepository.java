@@ -15,4 +15,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     List<User> findByRoleAndBranchIdInAndActiveTrueOrderByFullNameAsc(Role role, Collection<String> branchIds);
     List<User> findByBranchIdIsNullAndRoleIn(Collection<Role> roles);
+
+    /** Notification recipients: active users of a role, everywhere / at one branch. */
+    List<User> findByRoleAndActiveTrue(Role role);
+    List<User> findByRoleAndBranchIdAndActiveTrue(Role role, String branchId);
 }
